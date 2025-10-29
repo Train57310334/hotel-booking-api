@@ -1,29 +1,29 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards, Req } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-
-class RegisterDto {
-  email: string;
-  password: string;
-  name?: string;
-}
-class LoginDto {
-  email: string;
-  password: string;
-}
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private auth: AuthService) {}
+  constructor(private authService: AuthService) {}
 
+  /** 🧾 ลงทะเบียนผู้ใช้ใหม่ */
   @Post('register')
-  register(@Body() dto: RegisterDto) {
-    return this.auth.register(dto.email, dto.password, dto.name);
+  async register(@Body() body: { email: string; password: string; name?: string; phone?: string }) {
+    return this.authService.register(body);
   }
 
+  /** 🔑 เข้าสู่ระบบ */
   @Post('login')
-  login(@Body() dto: LoginDto) {
-    return this.auth.login(dto.email, dto.password);
+  async login(@Body() body: { email: string; password: string }) {
+    return this.authService.login(body);
+  }
+
+  /** 👤 ดูข้อมูลโปรไฟล์ (ต้อง login) */
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  async getProfile(@Req() req: any) {
+    return this.authService.getProfile(req.user.userId);
   }
 }

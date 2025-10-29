@@ -7,19 +7,59 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+//
+// ─── ENUMS ───────────────────────────────────────────────────────────────
+//
+
+enum Role {
+  USER
+  HOTEL_ADMIN
+  PLATFORM_ADMIN
+}
+
+//
+// ─── USER MANAGEMENT ─────────────────────────────────────────────────────
+//
+
 model User {
-  id           String  @id @default(cuid())
-  email        String  @unique
+  id           String   @id @default(cuid())
+  email        String   @unique
   passwordHash String
   name         String?
   phone        String?
   roles        String[] @default([]) // user, hotel_admin, platform_admin
 
-  bookings     Booking[]
-  reviews      Review[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  bookings        Booking[]
+  reviews         Review[]
+  roleAssignments RoleAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  Hotel     Hotel[]
 }
+
+//
+// ─── ROLE BASED ACCESS CONTROL ───────────────────────────────────────────
+//
+
+model RoleAssignment {
+  id      String  @id @default(cuid())
+  userId  String
+  hotelId String?
+  role    String // 'user' | 'hotel_admin' | 'platform_admin'
+
+  user  User   @relation(fields: [userId], references: [id])
+  hotel Hotel? @relation(fields: [hotelId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([hotelId])
+}
+
+//
+// ─── HOTEL AND ROOM STRUCTURE ────────────────────────────────────────────
+//
 
 model Hotel {
   id          String   @id @default(cuid())
@@ -31,117 +71,144 @@ model Hotel {
   latitude    Float?
   longitude   Float?
   amenities   String[] @default([])
-  roomTypes   RoomType[]
-  reviews     Review[]
-  ratePlans   RatePlan[]   // <-- เพิ่มบรรทัดนี้
-  bookings    Booking[]    // (แนะนำให้มี เพื่อ relation กับ Booking)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+
+  // RBAC: owner of this hotel
+  ownerId String?
+  owner   User?   @relation(fields: [ownerId], references: [id])
+
+  roomTypes  RoomType[]
+  reviews    Review[]
+  ratePlans  RatePlan[]
+  bookings   Booking[]
+  promotions Promotion[]
+
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  RoleAssignment RoleAssignment[]
 }
 
 model RoomType {
-  id         String   @id @default(cuid())
-  hotelId    String
-  name       String
-  bedConfig  String?
-  sizeSqm    Int?
-  amenities  String[] @default([])
-  hotel      Hotel    @relation(fields: [hotelId], references: [id])
-  inventory  InventoryCalendar[]
-  ratePlans  RatePlan[]
-  bookings   Booking[]
-  overrides  RateOverride[] 
-  
+  id        String              @id @default(cuid())
+  hotelId   String
+  name      String
+  bedConfig String?
+  sizeSqm   Int?
+  amenities String[]            @default([])
+  hotel     Hotel               @relation(fields: [hotelId], references: [id])
+  inventory InventoryCalendar[]
+  ratePlans RatePlan[]
+  bookings  Booking[]
+  overrides RateOverride[]
 }
 
 model InventoryCalendar {
-  id           String   @id @default(cuid())
-  roomTypeId   String
-  date         DateTime
-  allotment    Int      @default(0)
-  stopSale     Boolean  @default(false)
-  minStay      Int      @default(1)
-  roomType     RoomType @relation(fields: [roomTypeId], references: [id])
+  id         String   @id @default(cuid())
+  roomTypeId String
+  date       DateTime
+  allotment  Int      @default(0)
+  stopSale   Boolean  @default(false)
+  minStay    Int      @default(1)
+  roomType   RoomType @relation(fields: [roomTypeId], references: [id])
 
   @@unique([roomTypeId, date])
 }
 
 model RatePlan {
-  id                 String   @id @default(cuid())
-  hotelId            String
-  roomTypeId         String?
-  name               String
-  includesBreakfast  Boolean  @default(false)
-  cancellationRule   String?  // free/penalty windows
-  adultPricePolicy   String?  // e.g. per person/per room
-  childPricePolicy   String?
-  hotel              Hotel    @relation(fields: [hotelId], references: [id])
-  roomType           RoomType? @relation(fields: [roomTypeId], references: [id])
-  overrides          RateOverride[]
-  bookings           Booking[]
+  id                String  @id @default(cuid())
+  hotelId           String
+  roomTypeId        String?
+  name              String
+  includesBreakfast Boolean @default(false)
+  cancellationRule  String?
+  adultPricePolicy  String?
+  childPricePolicy  String?
+
+  hotel     Hotel          @relation(fields: [hotelId], references: [id])
+  roomType  RoomType?      @relation(fields: [roomTypeId], references: [id])
+  overrides RateOverride[]
+  bookings  Booking[]
 }
 
 model RateOverride {
-  id           String   @id @default(cuid())
-  roomTypeId   String
-  ratePlanId   String
-  date         DateTime
-  baseRate     Int
-  reason       String? // weekend/high-season/holiday
-  roomType     RoomType @relation(fields: [roomTypeId], references: [id])
-  ratePlan     RatePlan @relation(fields: [ratePlanId], references: [id])
+  id         String   @id @default(cuid())
+  roomTypeId String
+  ratePlanId String
+  date       DateTime
+  baseRate   Int
+  reason     String?
+  roomType   RoomType @relation(fields: [roomTypeId], references: [id])
+  ratePlan   RatePlan @relation(fields: [ratePlanId], references: [id])
 
   @@unique([roomTypeId, ratePlanId, date])
 }
 
+//
+// ─── PROMOTIONS AND DISCOUNTS ───────────────────────────────────────────
+//
+
 model Promotion {
-  id          String   @id @default(cuid())
-  code        String   @unique
-  type        String   // percent | fixed
-  value       Int
-  startDate   DateTime
-  endDate     DateTime
-  conditions  String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  code       String   @unique
+  type       String // percent | fixed
+  value      Int
+  startDate  DateTime
+  endDate    DateTime
+  conditions String?
+
+  // Optional: apply only to a specific hotel
+  hotelId String?
+  hotel   Hotel?  @relation(fields: [hotelId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
+//
+// ─── BOOKINGS AND PAYMENTS ──────────────────────────────────────────────
+//
+
 model Booking {
-  id           String   @id @default(cuid())
-  userId       String?
-  hotelId      String
-  roomTypeId   String
-  ratePlanId   String
-  checkIn      DateTime
-  checkOut     DateTime
-  guestsAdult  Int
-  guestsChild  Int
-  totalAmount  Int
-  status       String   // pending/confirmed/cancelled/checked_in/checked_out/no_show
-  leadName     String
-  leadEmail    String
-  leadPhone    String
+  id              String   @id @default(cuid())
+  userId          String?
+  hotelId         String
+  roomTypeId      String
+  ratePlanId      String
+  checkIn         DateTime
+  checkOut        DateTime
+  guestsAdult     Int
+  guestsChild     Int
+  totalAmount     Int
+  status          String // pending/confirmed/cancelled/checked_in/checked_out/no_show
+  leadName        String
+  leadEmail       String
+  leadPhone       String
   specialRequests String?
-  user         User?     @relation(fields: [userId], references: [id])
-  hotel        Hotel     @relation(fields: [hotelId], references: [id])
-  roomType     RoomType  @relation(fields: [roomTypeId], references: [id])
-  ratePlan     RatePlan  @relation(fields: [ratePlanId], references: [id])
-  payment      Payment?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+
+  user     User?    @relation(fields: [userId], references: [id])
+  hotel    Hotel    @relation(fields: [hotelId], references: [id])
+  roomType RoomType @relation(fields: [roomTypeId], references: [id])
+  ratePlan RatePlan @relation(fields: [ratePlanId], references: [id])
+  payment  Payment?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Payment {
-  id         String  @id @default(cuid())
-  bookingId  String  @unique
-  provider   String
-  intentId   String?
-  chargeId   String?
-  amount     Int
-  currency   String   @default("THB")
-  status     String   // created/authorized/captured/voided/refunded/failed
-  booking    Booking  @relation(fields: [bookingId], references: [id])
+  id        String  @id @default(cuid())
+  bookingId String  @unique
+  provider  String
+  intentId  String?
+  chargeId  String?
+  amount    Int
+  currency  String  @default("THB")
+  status    String // created/authorized/captured/voided/refunded/failed
+  booking   Booking @relation(fields: [bookingId], references: [id])
 }
+
+//
+// ─── REVIEWS ────────────────────────────────────────────────────────────
+//
 
 model Review {
   id        String   @id @default(cuid())
