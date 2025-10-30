@@ -6,15 +6,11 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from './roles.decorator';
-import { RolesService } from './roles.service';
 import { Role } from './role.enum';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(
-    private reflector: Reflector,
-    private rolesService: RolesService,
-  ) {}
+  constructor(private reflector: Reflector) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiredRoles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
@@ -22,17 +18,28 @@ export class RolesGuard implements CanActivate {
       context.getClass(),
     ]);
 
+    // ถ้า route นี้ไม่ได้กำหนด role → ให้ผ่านได้เลย
     if (!requiredRoles || requiredRoles.length === 0) return true;
 
     const { user } = context.switchToHttp().getRequest();
-    if (!user) throw new ForbiddenException('User not authenticated');
 
-    const userRoles = await this.rolesService.getRolesByUser(user.id);
-    const roles = userRoles.map((r) => r.role);
+    if (!user) {
+      throw new ForbiddenException('User not authenticated');
+    }
 
-    const hasRole = roles.some((r) => requiredRoles.includes(r as Role));
-    if (!hasRole)
-      throw new ForbiddenException('You do not have permission to access this resource');
+    // ใช้ role ที่อยู่ใน JWT โดยตรง
+    const userRole = user.role;
+    if (!userRole) {
+      throw new ForbiddenException('User has no role');
+    }
+
+    // ตรวจว่า user.role มีอยู่ใน requiredRoles หรือไม่
+    const hasRole = requiredRoles.includes(userRole as Role);
+    if (!hasRole) {
+      throw new ForbiddenException(
+        'You do not have permission to access this resource',
+      );
+    }
 
     return true;
   }
