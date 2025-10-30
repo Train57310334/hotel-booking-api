@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaService } from '@/common/prisma/prisma.service';
+import { PrismaModule } from '@/common/prisma/prisma.module';
 
 import { AuthModule } from '@/modules/auth/auth.module';
 import { RolesModule } from '@/modules/roles/roles.module';
@@ -38,6 +39,7 @@ import { RatesModule } from '@/modules/rates/rates.module';
     SearchModule,
     AvailabilityModule,
     RatesModule,
+    PrismaModule,
   ],
   providers: [PrismaService],
 })
