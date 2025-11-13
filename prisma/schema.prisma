@@ -87,6 +87,12 @@ model Hotel {
   RoleAssignment RoleAssignment[]
 }
 
+model Room {
+  id         String   @id @default(cuid())
+  roomTypeId String
+  roomType   RoomType @relation("RoomTypeRooms", fields: [roomTypeId], references: [id])
+}
+
 model RoomType {
   id        String              @id @default(cuid())
   hotelId   String
@@ -99,6 +105,7 @@ model RoomType {
   ratePlans RatePlan[]
   bookings  Booking[]
   overrides RateOverride[]
+  rooms     Room[]              @relation("RoomTypeRooms")
 }
 
 model InventoryCalendar {
