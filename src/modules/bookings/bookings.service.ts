@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/common/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { InventoryService } from '@/modules/inventory/inventory.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class BookingsService {
@@ -23,23 +24,28 @@ export class BookingsService {
 
     // ✅ Transaction: จอง + หัก stock
     const booking = await this.prisma.$transaction(async (tx) => {
+      const bookingData: Prisma.BookingUncheckedCreateInput = {
+        userId: data.userId ?? null,
+        hotelId: data.hotelId,
+        roomTypeId: data.roomTypeId,
+        ratePlanId: data.ratePlanId,
+        roomId: data.roomId,
+        checkIn: new Date(data.checkIn),
+        checkOut: new Date(data.checkOut),
+        guestsAdult: data.guests?.adult ?? 2,
+        guestsChild: data.guests?.child ?? 0,
+        totalAmount: data.totalAmount ?? 0,
+        status: 'pending',
+        leadName: data.leadGuest?.name ?? 'Guest',
+        leadEmail: data.leadGuest?.email ?? 'guest@example.com',
+        leadPhone: data.leadGuest?.phone ?? '',
+        specialRequests: data.specialRequests ?? null,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
       const newBooking = await tx.booking.create({
-        data: {
-          userId: data.userId ?? null,
-          hotelId: data.hotelId,
-          roomTypeId: data.roomTypeId,
-          ratePlanId: data.ratePlanId,
-          checkIn: new Date(data.checkIn),
-          checkOut: new Date(data.checkOut),
-          guestsAdult: data.guests?.adult ?? 2,
-          guestsChild: data.guests?.child ?? 0,
-          totalAmount: data.totalAmount ?? 0,
-          status: 'pending',
-          leadName: data.leadGuest?.name ?? 'Guest',
-          leadEmail: data.leadGuest?.email ?? 'guest@example.com',
-          leadPhone: data.leadGuest?.phone ?? '',
-          specialRequests: data.specialRequests ?? null,
-        },
+        data: bookingData,
         include: { hotel: true, roomType: true },
       });
 
