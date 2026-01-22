@@ -1,9 +1,17 @@
-import { Body, Controller, Param, Post } from '@nestjs/common';
+import { Body, Controller, Param, Post, Get, Query } from '@nestjs/common';
+import { PaymentsService } from './payments.service';
 import { ApiTags } from '@nestjs/swagger';
 
 @ApiTags('payments')
 @Controller('payments')
 export class PaymentsController {
+  constructor(private svc: PaymentsService) {}
+
+  @Get('admin/all')
+  findAll(@Query('search') search?: string, @Query('status') status?: string) {
+    return this.svc.findAll(search, status);
+  }
+
   @Post('intent')
   intent(@Body() body: any) {
     // TODO: Integrate with Omise/Stripe - create payment intent
