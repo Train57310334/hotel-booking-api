@@ -70,6 +70,7 @@ model Hotel {
   country     String?
   latitude    Float?
   longitude   Float?
+  imageUrl    String? // URL to hotel image
   amenities   String[] @default([])
 
   // RBAC: owner of this hotel
@@ -91,7 +92,9 @@ model Room {
   id         String   @id @default(cuid())
   roomTypeId String
   roomType   RoomType @relation("RoomTypeRooms", fields: [roomTypeId], references: [id])
-  bookings    Booking[]  @relation("RoomBookings")  // ✅ เพิ่มบรรทัดนี้
+  bookings    Booking[]  @relation("RoomBookings")
+  roomNumber  String? // Optional for now to avoid breaking existing data immediately, but logic will enforce it
+  deletedAt   DateTime?
 }
 
 model RoomType {
@@ -101,12 +104,18 @@ model RoomType {
   bedConfig String?
   sizeSqm   Int?
   amenities String[]            @default([])
+  images    String[]            @default([])
   hotel     Hotel               @relation(fields: [hotelId], references: [id])
   inventory InventoryCalendar[]
   ratePlans RatePlan[]
   bookings  Booking[]
   overrides RateOverride[]
   rooms     Room[]              @relation("RoomTypeRooms")
+  description String?
+  basePrice Int?
+  maxAdults Int               @default(2)
+  maxChildren Int             @default(0)
+  deletedAt   DateTime?
 }
 
 model InventoryCalendar {
@@ -231,4 +240,29 @@ model Review {
   hotel     Hotel    @relation(fields: [hotelId], references: [id])
   user      User     @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())
+}
+
+//
+// ─── MESSAGES ───────────────────────────────────────────────────────────
+//
+
+model Message {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  subject   String?
+  content   String
+  status    String   @default("unread") // unread, read, replied
+  createdAt DateTime @default(now())
+}
+
+//
+// ─── SYSTEM SETTINGS ────────────────────────────────────────────────────
+//
+
+model SystemSetting {
+  key       String   @id
+  value     String   // DB connection string, API keys, JSON config
+  category  String   @default("general") // general, payment, notification
+  updatedAt DateTime @updatedAt
 }

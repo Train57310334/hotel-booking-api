@@ -19,15 +19,25 @@ import { ReportsModule } from '@/modules/reports/reports.module';
 import { SearchModule } from '@/modules/search/search.module';
 import { AvailabilityModule } from '@/modules/availability/availability.module';
 import { RatesModule } from '@/modules/rates/rates.module';
+import { OwnersModule } from '@/modules/owners/owners.module';
+import { RoomsModule } from '@/modules/rooms/rooms.module';
+import { UploadModule } from '@/modules/upload/upload.module';
+import { MessagesModule } from '@/modules/messages/messages.module';
+import { SettingsModule } from '@/modules/settings/settings.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    PrismaModule,
     AuthModule,
-    RolesModule,
     UsersModule,
     HotelsModule,
     RoomTypesModule,
+    RoomsModule,
+    BookingsModule,
+    UploadModule,
+    MessagesModule,
+    SettingsModule,
     InventoryModule,
     BookingsModule,
     NotificationsModule,

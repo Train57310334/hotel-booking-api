@@ -10,6 +10,14 @@ export class HotelsService {
   }
 
   find(id: string) {
-    return this.prisma.hotel.findUnique({ where: { id }, include: { roomTypes: true, reviews: true } });
+    return this.prisma.hotel.findUnique({
+      where: { id },
+      include: {
+        roomTypes: {
+          include: { ratePlans: true }
+        },
+        reviews: true
+      }
+    });
   }
 }
