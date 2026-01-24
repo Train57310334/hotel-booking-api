@@ -1,17 +1,51 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Param, Post, Put, Query, UseGuards, Req } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ReviewsService } from './reviews.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('reviews')
 @Controller('reviews')
 export class ReviewsController {
-  @Post(':hotelId')
-  create(@Param('hotelId') hotelId: string, @Body() body: any) {
-    // TODO: persist review
-    return { hotelId, ...body, status: 'pending' };
+  constructor(private svc: ReviewsService) {}
+
+  // Public: List approved reviews for a hotel
+  @Get('hotel/:hotelId')
+  listPublic(@Param('hotelId') hotelId: string) {
+    return this.svc.findByHotel(hotelId);
   }
 
-  @Get(':hotelId')
-  list(@Param('hotelId') hotelId: string) {
-    return { hotelId, reviews: [] };
+  // User: Create Review
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post()
+  create(@Req() req, @Body() body: { hotelId: string; rating: number; comment: string }) {
+    return this.svc.create({ 
+        userId: req.user.userId,
+        ...body
+    });
+  }
+
+  // Admin: List All
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Get('admin/all')
+  findAll(@Query('status') status?: string) {
+    return this.svc.findAll(status);
+  }
+
+  // Admin: Stats
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Get('admin/stats')
+  getStats() {
+    return this.svc.getStats();
+  }
+
+  // Admin: Moderate
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Put('admin/:id/status')
+  updateStatus(@Param('id') id: string, @Body() body: { status: string }) {
+    return this.svc.updateStatus(id, body.status);
   }
 }

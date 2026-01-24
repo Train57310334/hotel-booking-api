@@ -47,30 +47,85 @@ export class InventoryService {
   }
 
   async reduceInventory(roomTypeId: string, dateRange: Date[]) {
+    // 1. Get total physical rooms count to use as default base if inventory doesn't exist
+    const totalRooms = await this.prisma.room.count({
+      where: { roomTypeId, deletedAt: null }
+    });
+
     for (const date of dateRange) {
       const record = await this.prisma.inventoryCalendar.findUnique({
         where: { roomTypeId_date: { roomTypeId, date } },
       });
 
-      if (!record || record.allotment <= 0)
-        throw new NotFoundException(`No inventory available for ${date.toDateString()}`);
-
-      await this.prisma.inventoryCalendar.update({
-        where: { roomTypeId_date: { roomTypeId, date } },
-        data: { allotment: record.allotment - 1 },
-      });
+      if (record) {
+        if (record.allotment <= 0) {
+           throw new NotFoundException(`No inventory available for ${date.toDateString()}`);
+        }
+        await this.prisma.inventoryCalendar.update({
+          where: { roomTypeId_date: { roomTypeId, date } },
+          data: { allotment: record.allotment - 1 },
+        });
+      } else {
+        // Record doesn't exist, assume full availability (totalRooms) minus 1
+        if (totalRooms <= 0) {
+           throw new NotFoundException(`No physical rooms found for this Room Type, and no inventory set.`);
+        }
+        await this.prisma.inventoryCalendar.create({
+          data: {
+            roomTypeId,
+            date,
+            allotment: totalRooms - 1, // Default was totalRooms, now reducing by 1
+            stopSale: false,
+            minStay: 1
+          }
+        });
+      }
     }
   }
 
   async checkAvailability(roomTypeId: string, startDate: string, endDate: string) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    // Generate all dates
+    const dates: Date[] = [];
+    let d = new Date(start);
+    while (d < end) {
+        dates.push(new Date(d));
+        d.setDate(d.getDate() + 1);
+    }
+
+    // 1. Get explicit inventory
     const inventories = await this.prisma.inventoryCalendar.findMany({
       where: {
         roomTypeId,
-        date: { gte: new Date(startDate), lt: new Date(endDate) },
-        stopSale: false,
-        allotment: { gt: 0 },
+        date: { in: dates },
       },
     });
-    return inventories.length > 0;
+
+    // 2. Get fallback limit (physical room count)
+    const totalRooms = await this.prisma.room.count({
+      where: { roomTypeId, deletedAt: null }
+    });
+
+    // 3. Check every single date
+    for (const date of dates) {
+        const record = inventories.find(i => i.date.getTime() === date.getTime());
+
+        if (record) {
+            // Explicit record exists
+            if (record.stopSale || record.allotment <= 0) {
+                return false;
+            }
+        } else {
+            // No record, fallback to check physical rooms
+            // If we have rooms, we assume it's Open. If 0 rooms, it's Closed.
+            if (totalRooms <= 0) {
+                return false;
+            }
+        }
+    }
+    
+    return true;
   }
 }

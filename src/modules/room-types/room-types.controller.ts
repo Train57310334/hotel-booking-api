@@ -1,4 +1,5 @@
 import { Controller, Get, Param, Post, Body, Put, Delete } from '@nestjs/common';
+import { IsString, IsNumber, IsOptional, IsArray, IsBoolean } from 'class-validator';
 import { ApiTags } from '@nestjs/swagger';
 import { RoomTypesService } from './room-types.service';
 

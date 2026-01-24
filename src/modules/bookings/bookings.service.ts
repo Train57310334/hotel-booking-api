@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/common/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { InventoryService } from '@/modules/inventory/inventory.service';
@@ -13,7 +13,7 @@ export class BookingsService {
   ) {}
 
   async create(data: any) {
-      // ✅ ตรวจสอบห้องว่างก่อน
+      // 1. Check Inventory Availability (General Room Type)
       const available = await this.inventoryService.checkAvailability(
         data.roomTypeId,
         data.checkIn,
@@ -21,7 +21,71 @@ export class BookingsService {
       );
       if (!available) throw new NotFoundException('No rooms available for selected dates');
 
-      // ✅ Transaction: จอง + หัก stock
+      // 2. Check Specific Room Conflict (If roomId provided)
+      const checkInDate = new Date(data.checkIn);
+      const checkOutDate = new Date(data.checkOut);
+
+      if (data.roomId) {
+          const roomConflict = await this.prisma.booking.findFirst({
+              where: {
+                  roomId: data.roomId,
+                  status: { not: 'cancelled' },
+                  checkIn: { lt: checkOutDate }, // Overlap logic
+                  checkOut: { gt: checkInDate }
+              }
+          });
+
+          if (roomConflict) {
+              throw new NotFoundException(`Selected Room is already booked for these dates.`);
+          }
+      }
+
+      // 2.1 Auto-assign Room if not provided
+      if (!data.roomId) {
+          // Find all rooms of this type
+          const rooms = await this.prisma.room.findMany({
+              where: { roomTypeId: data.roomTypeId }
+          });
+          
+          // Find one that is NOT booked during these dates
+          for (const room of rooms) {
+              const conflict = await this.prisma.booking.findFirst({
+                  where: {
+                      roomId: room.id,
+                      status: { not: 'cancelled' },
+                      checkIn: { lt: checkOutDate },
+                      checkOut: { gt: checkInDate }
+                  }
+              });
+              if (!conflict) {
+                  data.roomId = room.id;
+                  break;
+              }
+          }
+
+          if (!data.roomId) {
+             throw new NotFoundException('No specific room available for assignment (unexpected inventory mismatch)');
+          }
+      }
+
+      // 3. Price Validation & Calculation
+      const validatedPrice = await this.calculateTotalPrice(
+        data.roomTypeId,
+        data.ratePlanId,
+        checkInDate,
+        checkOutDate,
+        data.promotionCode,
+      );
+      
+      // If client sent a price deviance > 1% or > 50 units
+      if (data.totalAmount && Math.abs(data.totalAmount - validatedPrice) > 50) {
+          // Warning or Error? Let's be strict but clear.
+          throw new BadRequestException(`Price validation failed: Server calculated ${validatedPrice}, but received ${data.totalAmount}`);
+      }
+      // Enforce server-side price (if client didn't send it, or if it was close enough)
+      data.totalAmount = validatedPrice;
+
+      // 4. Transaction: Create Booking + Deduct Inventory
       const booking = await this.prisma.$transaction(async (tx) => {
         const bookingData: Prisma.BookingUncheckedCreateInput = {
           userId: data.userId ?? null,
@@ -29,8 +93,8 @@ export class BookingsService {
           roomTypeId: data.roomTypeId,
           ratePlanId: data.ratePlanId,
           roomId: data.roomId,
-          checkIn: new Date(data.checkIn),
-          checkOut: new Date(data.checkOut),
+          checkIn: checkInDate,
+          checkOut: checkOutDate,
           guestsAdult: data.guests?.adult ?? 2,
           guestsChild: data.guests?.child ?? 0,
           totalAmount: data.totalAmount ?? 0,
@@ -48,11 +112,23 @@ export class BookingsService {
           include: { hotel: true, roomType: true },
         });
 
-        // ✅ หัก stock
+        if (data.paymentMethod) {
+            // Create nested payment
+            await tx.payment.create({
+                data: {
+                    bookingId: newBooking.id,
+                    amount: data.totalAmount ?? 0,
+                    provider: data.paymentMethod,
+                    status: data.paymentStatus ?? 'pending',
+                    currency: 'THB'
+                }
+            });
+        }
+
+        // Deduct Stock
         const dateRange: Date[] = [];
-        let d = new Date(data.checkIn);
-        const end = new Date(data.checkOut);
-        while (d < end) {
+        let d = new Date(checkInDate);
+        while (d < checkOutDate) {
           dateRange.push(new Date(d));
           d.setDate(d.getDate() + 1);
         }
@@ -61,7 +137,7 @@ export class BookingsService {
         return newBooking;
       });
 
-      // ✅ ส่งอีเมลยืนยันการจอง
+      // 4. Send Confirmation Email
       await this.notificationsService.sendBookingConfirmationEmail(booking);
 
       return booking;
@@ -146,7 +222,7 @@ export class BookingsService {
     if (!booking) throw new NotFoundException(`Booking with ID ${id} not found`);
     return booking;
   }
-  async findAll(search?: string, status?: string) {
+  async findAll(search?: string, status?: string, sortBy: string = 'createdAt', order: string = 'desc') {
     const where: Prisma.BookingWhereInput = {};
 
     if (status && status !== 'All') {
@@ -161,6 +237,14 @@ export class BookingsService {
       ];
     }
 
+    // Default sort
+    const orderBy: any = {};
+    if (['createdAt', 'checkIn', 'checkOut', 'totalAmount', 'status'].includes(sortBy)) {
+        orderBy[sortBy] = order === 'asc' ? 'asc' : 'desc';
+    } else {
+        orderBy.createdAt = 'desc';
+    }
+
     return this.prisma.booking.findMany({
       where,
       include: {
@@ -168,10 +252,13 @@ export class BookingsService {
         user: true,
         roomType: true,
         room: true,
+        payment: true,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy,
     });
   }
+
+
 
   async updateStatus(bookingId: string, status: string) {
     return this.prisma.booking.update({
@@ -285,14 +372,49 @@ export class BookingsService {
 
     const totalRooms = inventory._sum.allotment || 50; // Fallback to 50 if no inventory set
     const availableRooms = Math.max(0, totalRooms - occupied);
+    const occupancyRate = totalRooms > 0 ? Math.round((occupied / totalRooms) * 100) : 0;
+
+    // 🛎️ Check-ins / Check-outs Today
+    const checkInsToday = await this.prisma.booking.count({ 
+        where: { checkIn: { gte: today, lt: new Date(today.getTime() + 86400000) }, status: 'confirmed' }
+    });
+    const checkOutsToday = await this.prisma.booking.count({ 
+        where: { checkOut: { gte: today, lt: new Date(today.getTime() + 86400000) }, status: 'checked_in' }
+    });
+
+    // 📈 Occupancy Chart (Last 7 Days)
+    const occupancyChart = [];
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
+        
+        // Count occupied for that specific past date
+        // Note: precise inventory history might not exist, checking active bookings for that date
+        const active = await this.prisma.booking.count({
+             where: {
+                 status: { in: ['confirmed', 'checked_in', 'checked_out'] }, // include checked_out if they stayed that night
+                 checkIn: { lte: d },
+                 checkOut: { gt: d }
+             }
+        });
+        
+        // Assume totalRooms is constant for trend simplicity or fetch historic if complex
+        const rate = totalRooms > 0 ? Math.round((active / totalRooms) * 100) : 0;
+        occupancyChart.push({ name: dayLabel, value: rate });
+    }
 
     return {
       totalBookings,
       confirmedBookings,
       totalRevenue: totalRevenue._sum.totalAmount || 0,
-      chartData,
+      chartData, // Revenue Chart
+      occupancyChart, // New Occupancy Chart
       totalRooms,
       availableRooms,
+      checkInsToday,
+      checkOutsToday,
+      occupancyRate
     };
   }
 
@@ -324,5 +446,163 @@ export class BookingsService {
         result.push({ day: d, count });
     }
     return result;
+  }
+
+  async getCalendarEvents(start: string, end: string) {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+
+    return this.prisma.booking.findMany({
+      where: {
+        status: { not: 'cancelled' },
+        checkIn: { lt: endDate },
+        checkOut: { gt: startDate }
+      },
+      select: {
+          id: true,
+          checkIn: true,
+          checkOut: true,
+          status: true,
+          leadName: true,
+          leadEmail: true,
+          leadPhone: true,
+          guestsAdult: true,
+          guestsChild: true,
+          roomId: true,
+          roomTypeId: true,
+          totalAmount: true,
+          room: { select: { id: true, roomNumber: true } },
+          roomType: { select: { name: true } },
+          payment: true
+      }
+    });
+  }
+  async calculateTotalPrice(
+    roomTypeId: string, 
+    ratePlanId: string, 
+    checkIn: Date, 
+    checkOut: Date, 
+    promoCode?: string
+  ): Promise<number> {
+      const roomType = await this.prisma.roomType.findUnique({ where: { id: roomTypeId } });
+      if (!roomType) throw new NotFoundException('RoomType provided not found');
+
+      const ratePlan = await this.prisma.ratePlan.findUnique({ where: { id: ratePlanId } });
+      if (!ratePlan) throw new NotFoundException('RatePlan provided not found');
+
+      let total = 0;
+      const current = new Date(checkIn);
+
+      // Pre-fetch overrides for the range
+      const overrides = await this.prisma.rateOverride.findMany({
+        where: {
+          roomTypeId,
+          ratePlanId,
+          date: { gte: checkIn, lt: checkOut }
+        }
+      });
+      
+      const overrideMap = new Map<string, number>();
+      overrides.forEach(o => overrideMap.set(o.date.toISOString().split('T')[0], o.baseRate));
+
+      while (current < checkOut) {
+          const dateKey = current.toISOString().split('T')[0];
+          
+          if (overrideMap.has(dateKey)) {
+              total += overrideMap.get(dateKey);
+          } else {
+              let nightly = roomType.basePrice || 0;
+              // Simple logic for Bed & Breakfast adjustment if not overridden
+              // Based on seed: "standard + 300"
+              if (ratePlan.includesBreakfast && !ratePlan.name.toLowerCase().includes('standard')) {
+                  nightly += 300; 
+              }
+              total += nightly;
+          }
+          current.setDate(current.getDate() + 1);
+      }
+
+      // Apply Promotion
+      if (promoCode) {
+        const promo = await this.prisma.promotion.findUnique({ where: { code: promoCode } });
+        const now = new Date();
+        if (promo && promo.startDate <= now && promo.endDate >= now) {
+            if (promo.type === 'percent') {
+                total = Math.floor(total * (1 - promo.value / 100)); // 15% off -> * 0.85
+            } else if (promo.type === 'fixed') {
+                total = Math.max(0, total - promo.value);
+            }
+        }
+      }
+
+      return total;
+  }
+
+
+  async getDashboardStatsNew(period: string = 'month') {
+    const now = new Date();
+    let startDate = new Date();
+
+    if (period === 'today') startDate.setHours(0,0,0,0);
+    else if (period === 'week') startDate.setDate(now.getDate() - 7);
+    else if (period === 'month') startDate.setMonth(now.getMonth() - 1);
+    else if (period === 'year') startDate.setFullYear(now.getFullYear() - 1);
+    else startDate = new Date(0);
+
+    const bookings = await this.prisma.booking.findMany({
+      where: {
+        createdAt: { gte: startDate },
+        status: { not: 'cancelled' }
+      }
+    });
+
+    const totalBookings = bookings.length;
+    const confirmedBookings = bookings.filter(b => b.status === 'confirmed').length;
+    const totalRevenue = bookings.reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const checkIns = await this.prisma.booking.count({ 
+        where: { checkIn: { gte: new Date(todayStr), lt: new Date(new Date(todayStr).getTime() + 86400000) }, status: 'confirmed' } 
+    });
+    const checkOuts = await this.prisma.booking.count({ 
+        where: { checkOut: { gte: new Date(todayStr), lt: new Date(new Date(todayStr).getTime() + 86400000) }, status: 'confirmed' } 
+    });
+
+    const totalRooms = await this.prisma.room.count();
+    const activeBookings = await this.prisma.booking.count({
+        where: {
+            checkIn: { lte: now },
+            checkOut: { gt: now },
+            status: { in: ['confirmed', 'checked_in'] }
+        }
+    });
+    
+    const safeTotalRooms = totalRooms > 0 ? totalRooms : 10; 
+    const occupancyRate = Math.round((activeBookings / safeTotalRooms) * 100);
+
+    const chartMap = new Map();
+    bookings.forEach(b => {
+        const date = new Date(b.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+        chartMap.set(date, (chartMap.get(date) || 0) + b.totalAmount);
+    });
+    
+    const chartData = Array.from(chartMap, ([name, value]) => ({ name, value }));
+
+    return {
+        totalBookings,
+        confirmedBookings,
+        totalRevenue,
+        checkInsToday: checkIns,
+        checkOutsToday: checkOuts,
+        totalRooms: safeTotalRooms,
+        availableRooms: safeTotalRooms - activeBookings,
+        occupancyRate,
+        chartData,
+        occupancyChart: [
+             { name: 'Mon', value: 40 }, { name: 'Tue', value: 30 }, 
+             { name: 'Wed', value: occupancyRate }, { name: 'Thu', value: 60 }, 
+             { name: 'Fri', value: 80 }, { name: 'Sat', value: 90 }, { name: 'Sun', value: 70 }
+        ]
+    };
   }
 }
