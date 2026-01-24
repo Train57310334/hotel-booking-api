@@ -13,9 +13,10 @@ export class PaymentsController {
   }
 
   @Post('intent')
-  intent(@Body() body: any) {
-    // TODO: Integrate with Omise/Stripe - create payment intent
-    return { provider: 'mock', intentId: 'pi_123', clientSecret: 'secret_abc' };
+  async intent(@Body() body: { amount: number; currency?: string; description?: string }) {
+    if (!body.amount) throw new Error('Amount is required');
+    
+    return this.svc.createPaymentIntent(body.amount, body.currency, body.description);
   }
 
   @Post(':bookingId/capture')

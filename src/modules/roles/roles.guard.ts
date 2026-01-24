@@ -27,14 +27,19 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('User not authenticated');
     }
 
-    // ใช้ role ที่อยู่ใน JWT โดยตรง
-    const userRole = user.role;
-    if (!userRole) {
-      throw new ForbiddenException('User has no role');
+    // ใช้ roles array ที่อยู่ใน JWT
+    const userRoles = user.roles; // Changed from user.role to user.roles
+    if (!userRoles || !Array.isArray(userRoles) || userRoles.length === 0) {
+       // Support legacy or single role if needed, or throw
+       if (user.role) {
+           if (requiredRoles.includes(user.role as Role)) return true;
+       }
+       throw new ForbiddenException('User has no roles');
     }
 
-    // ตรวจว่า user.role มีอยู่ใน requiredRoles หรือไม่
-    const hasRole = requiredRoles.includes(userRole as Role);
+    // ตรวจว่า user.roles มีอย่างน้อยหนึ่ง role ที่ตรงกับ requiredRoles
+    const hasRole = userRoles.some((r: string) => requiredRoles.includes(r as Role));
+    
     if (!hasRole) {
       throw new ForbiddenException(
         'You do not have permission to access this resource',

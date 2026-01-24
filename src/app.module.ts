@@ -49,7 +49,7 @@ import { SettingsModule } from '@/modules/settings/settings.module';
     SearchModule,
     AvailabilityModule,
     RatesModule,
-    PrismaModule,
+    OwnersModule,
   ],
   providers: [PrismaService],
 })

@@ -7,12 +7,13 @@ async function main() {
   console.log('🌱 Seeding fresh data for Admin Dashboard...');
 
   // 1. Ensure User
-  const email = 'demo@hotel.com';
+  // 1. Ensure User
+  const email = 'admin@bookingkub.com';
   let user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
-    const passwordHash = await bcrypt.hash('Demo1234!', 10);
+    const passwordHash = await bcrypt.hash('admin1234', 10);
     user = await prisma.user.create({
-      data: { email, passwordHash, name: 'Demo User', roles: ['user', 'hotel_admin'] },
+      data: { email, passwordHash, name: 'Super Admin', roles: ['user', 'hotel_admin', 'platform_admin'] },
     });
   }
 

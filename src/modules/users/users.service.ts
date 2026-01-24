@@ -45,6 +45,19 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { id } });
   }
 
+  findOne(id: string) {
+    return this.prisma.user.findUnique({
+      where: { id },
+      include: {
+        bookings: {
+          orderBy: { createdAt: 'desc' },
+          include: { roomType: true }
+        },
+        _count: { select: { bookings: true } }
+      }
+    });
+  }
+
   update(id: string, data: any) {
     // Remove sensitive fields if any or strict DTO
     const { password, ...updates } = data; 

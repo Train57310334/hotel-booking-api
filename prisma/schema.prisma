@@ -28,6 +28,11 @@ model User {
   name         String?
   phone        String?
   roles        String[] @default([]) // user, hotel_admin, platform_admin
+  
+  // CRM Fields
+  tags         String[] @default([]) // VIP, Blacklist, Corporate
+  notes        String?  // Staff notes
+  preferences  String?  // JSON string for dietary, room preferences
 
   bookings        Booking[]
   reviews         Review[]
@@ -73,6 +78,12 @@ model Hotel {
   imageUrl    String? // URL to hotel image
   amenities   String[] @default([])
 
+  // Content Management
+  contactEmail    String?
+  contactPhone    String?
+  heroTitle       String?
+  heroDescription String?
+
   // RBAC: owner of this hotel
   ownerId String?
   owner   User?   @relation(fields: [ownerId], references: [id])
@@ -113,8 +124,11 @@ model RoomType {
   rooms     Room[]              @relation("RoomTypeRooms")
   description String?
   basePrice Int?
-  maxAdults Int               @default(2)
-  maxChildren Int             @default(0)
+  maxAdults   Int               @default(2)
+  maxChildren Int               @default(0)
+  isFeatured  Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @default(now()) @updatedAt
   deletedAt   DateTime?
 }
 
@@ -265,4 +279,14 @@ model SystemSetting {
   value     String   // DB connection string, API keys, JSON config
   category  String   @default("general") // general, payment, notification
   updatedAt DateTime @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  title     String
+  message   String
+  type      String   @default("info") // info, success, warning, error
+  userId    String?  // Optional: specific to a user
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
 }

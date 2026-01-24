@@ -5,12 +5,16 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 export class RoomTypesService {
   constructor(private prisma: PrismaService) {}
   listByHotel(hotelId: string) {
-    return this.prisma.roomType.findMany({ where: { hotelId, deletedAt: null } });
+    return this.prisma.roomType.findMany({ 
+      where: { hotelId, deletedAt: null },
+      orderBy: { createdAt: 'desc' }
+    });
   }
 
   findAll() {
     return this.prisma.roomType.findMany({
       where: { deletedAt: null },
+      orderBy: { createdAt: 'desc' },
       include: {
         hotel: true,
         ratePlans: true,
