@@ -13,7 +13,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "seed": "ts-node prisma/seed.ts",
     "start:dev": "nest start --watch",
-    "start:prod": "node dist/main"
+    "start:prod": "node dist/src/main"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",
