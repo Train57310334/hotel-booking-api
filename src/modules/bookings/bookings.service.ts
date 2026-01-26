@@ -528,7 +528,8 @@ export class BookingsService {
         const now = new Date();
         if (promo && promo.startDate <= now && promo.endDate >= now) {
             if (promo.type === 'percent') {
-                total = Math.floor(total * (1 - promo.value / 100)); // 15% off -> * 0.85
+                const discount = Math.floor(total * (promo.value / 100));
+                total = Math.max(0, total - discount);
             } else if (promo.type === 'fixed') {
                 total = Math.max(0, total - promo.value);
             }
