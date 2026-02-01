@@ -46,6 +46,49 @@ export class InventoryService {
     });
   }
 
+  async updateBulk(
+    roomTypeId: string,
+    startDate: string,
+    endDate: string,
+    data: { allotment?: number; stopSale?: boolean; minStay?: number }
+  ) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const dates = [];
+
+    // Generate dates array
+    let d = new Date(start);
+    while (d <= end) {
+      dates.push(new Date(d));
+      d.setDate(d.getDate() + 1);
+    }
+
+    // Update Transaction
+    // 1. Upsert for each date effectively
+    // Since Prisma doesn't have "upsertMany", we can try delete+create (dangerous if data loss) or loop upserts.
+    // For safety and simplicity in this context, loop upserts in transaction is fine for < 365 days.
+    
+    const operations = dates.map(date => {
+       return this.prisma.inventoryCalendar.upsert({
+           where: { roomTypeId_date: { roomTypeId, date } },
+           create: {
+               roomTypeId,
+               date,
+               allotment: data.allotment ?? 0,
+               stopSale: data.stopSale ?? false,
+               minStay: data.minStay ?? 1
+           },
+           update: {
+               ...(data.allotment !== undefined && { allotment: data.allotment }),
+               ...(data.stopSale !== undefined && { stopSale: data.stopSale }),
+               ...(data.minStay !== undefined && { minStay: data.minStay }),
+           }
+       });
+    });
+
+    return this.prisma.$transaction(operations);
+  }
+
   async reduceInventory(roomTypeId: string, dateRange: Date[]) {
     // 1. Get total physical rooms count to use as default base if inventory doesn't exist
     const totalRooms = await this.prisma.room.count({

@@ -19,6 +19,11 @@ export class RoomsController {
     return this.roomsService.create(createRoomDto);
   }
 
+  @Post('bulk')
+  createBulk(@Body() body: { roomTypeId: string; prefix?: string; startNumber: number; count: number }) {
+    return this.roomsService.createBulk(body);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.roomsService.findOne(id);

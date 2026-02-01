@@ -50,6 +50,12 @@ export class ReviewsService {
     });
   }
 
+  async delete(id: string) {
+    return this.prisma.review.delete({
+      where: { id }
+    });
+  }
+
   async getStats() {
     const total = await this.prisma.review.count();
     const pending = await this.prisma.review.count({ where: { status: 'pending' } });

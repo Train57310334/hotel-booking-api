@@ -41,6 +41,12 @@ export class RatesController {
       return this.ratesService.upsertOverride(body);
   }
 
+  @Roles(Role.HotelAdmin, Role.PlatformAdmin)
+  @Post('overrides/bulk')
+  upsertOverrideBulk(@Body() body) {
+      return this.ratesService.upsertOverrideBulk(body);
+  }
+
   @Get('overrides')
   getOverrides(
       @Query('roomTypeId') roomTypeId: string,

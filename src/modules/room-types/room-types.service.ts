@@ -30,10 +30,12 @@ export class RoomTypesService {
   async create(data: any) {
     try {
       const { price, ...rest } = data;
+      const basePrice = price !== undefined ? Number(price) : rest.basePrice;
+      
       return await this.prisma.roomType.create({
         data: {
           ...rest,
-          basePrice: price ? Number(price) : undefined,
+          basePrice: basePrice !== undefined ? Number(basePrice) : undefined,
         },
       });
     } catch (e) {

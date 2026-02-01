@@ -62,7 +62,18 @@ export class SearchService {
     const hotels = await this.prisma.hotel.findMany({
       where,
       include: {
-        reviews: true,
+        reviews: {
+            where: { status: 'approved' },
+            select: {
+                id: true,
+                rating: true,
+                comment: true,
+                user: { select: { name: true } },
+                createdAt: true
+            },
+            take: 5,
+            orderBy: { createdAt: 'desc' }
+        },
         roomTypes: {
           include: {
             rooms: {
@@ -87,5 +98,53 @@ export class SearchService {
       if (typeof maxPrice === 'number' && h.minPrice > maxPrice) return false;
       return true;
     });
+  }
+  async globalSearch(q: string) {
+    if (!q || q.length < 2) return { users: [], bookings: [], rooms: [], roomTypes: [] };
+
+    const [users, bookings, rooms, roomTypes] = await Promise.all([
+      // 1. Search Users
+      this.prisma.user.findMany({
+        where: {
+          OR: [
+            { name: { contains: q, mode: 'insensitive' } },
+            { email: { contains: q, mode: 'insensitive' } },
+            { phone: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+        take: 5,
+      }),
+
+      // 2. Search Bookings
+      this.prisma.booking.findMany({
+        where: {
+          OR: [
+            { id: { contains: q, mode: 'insensitive' } },
+            { leadName: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+        take: 5,
+        include: { roomType: true },
+      }),
+
+      // 3. Search Rooms
+      this.prisma.room.findMany({
+        where: {
+          roomNumber: { contains: q, mode: 'insensitive' },
+        },
+        take: 5,
+        include: { roomType: true },
+      }),
+
+      // 4. Search Room Types
+      this.prisma.roomType.findMany({
+        where: {
+          name: { contains: q, mode: 'insensitive' },
+        },
+        take: 5,
+      }),
+    ]);
+
+    return { users, bookings, rooms, roomTypes };
   }
 }

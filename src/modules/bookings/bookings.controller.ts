@@ -13,6 +13,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { BookingsService } from './bookings.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { HotelAuthGuard } from '../auth/guards/hotel-auth.guard';
 
 import { IsString, IsNumber, IsOptional, IsObject, IsEmail, IsDateString } from 'class-validator';
 
@@ -182,61 +183,75 @@ export class BookingsController {
   /**
    * 📅 Admin: Calendar Density
    */
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, HotelAuthGuard)
   @Get('admin/calendar')
-  async getCalendarStats(@Req() req, @Body() body) {
+  async getCalendarStats(@Req() req, @Query('hotelId') hotelId: string) {
      // For simplicity, use current date or query params. 
      // NestJS standard is @Query but let's default to now if not provided
      const now = new Date();
      // In real app, extract Query params ?month=11&year=2024
      // For this Demo, we just return current month
-     return this.svc.getCalendarBookings(now.getMonth() + 1, now.getFullYear());
+     if (!hotelId) throw new ForbiddenException('Hotel ID is required'); // Simple check
+     return this.svc.getCalendarBookings(hotelId, now.getMonth() + 1, now.getFullYear());
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, HotelAuthGuard)
   @Get('admin/calendar-events')
-  async getCalendarEvents(@Query('start') start: string, @Query('end') end: string) {
-    return this.svc.getCalendarEvents(start, end);
+  async getCalendarEvents(@Query('start') start: string, @Query('end') end: string, @Query('hotelId') hotelId: string) {
+    if (!hotelId) throw new ForbiddenException('Hotel ID is required');
+    return this.svc.getCalendarEvents(hotelId, start, end);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, HotelAuthGuard)
   @Get('admin/dashboard')
-  async getDashboardStats(@Req() req, @Query('period') period?: string) {
+  async getDashboardStats(@Req() req, @Query('period') period?: string, @Query('hotelId') hotelId?: string) {
     // TODO: Add Role Guard here
-    return this.svc.getDashboardStatsNew(period);
+    if (!hotelId) throw new ForbiddenException('Hotel ID is required');
+    return this.svc.getDashboardStatsNew(hotelId, period);
   }
 
   /**
    * 📋 Admin: Get All Bookings
    */
+  @UseGuards(JwtAuthGuard, HotelAuthGuard)
   @Get('admin/all')
   async getAllBookings(
     @Req() req, 
-    @Query('search') search?: string, 
+    @Query('page') page: number = 1,
+    @Query('hotelId') hotelId: string,
+    @Query('search') search?: string,
     @Query('status') status?: string,
-    @Query('sortBy') sortBy?: string,
     @Query('order') order?: string
   ) {
     // TODO: Add Role Guard here
-    return this.svc.findAll(search, status, sortBy, order);
+    if (!hotelId) throw new ForbiddenException('Hotel ID is required');
+    return this.svc.findAll(hotelId, search, status, 'createdAt', order);
   }
 
   /**
    * 👮 Admin: Cancel Booking
    */
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, HotelAuthGuard)
   @Put('admin/:id/cancel')
-  async cancelBookingByAdmin(@Param('id') bookingId: string) {
-    return this.svc.cancelBookingByAdmin(bookingId);
+  async cancelBookingByAdmin(@Param('id') bookingId: string, @Query('hotelId') hotelId: string) {
+    if (!hotelId) throw new ForbiddenException('Hotel ID is required');
+    return this.svc.cancelBookingByAdmin(bookingId, hotelId);
   }
 
   /**
    * ✏️ Admin: Update Booking Status
    */
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, HotelAuthGuard)
   @Put('admin/:id/status')
-  async updateStatus(@Param('id') id: string, @Body('status') status: string) {
+  async updateStatus(@Param('id') id: string, @Body('status') status: string, @Query('hotelId') hotelId: string) {
     // TODO: Add Role Guard here
-    return this.svc.updateStatus(id, status);
+    if (!hotelId) throw new ForbiddenException('Hotel ID is required');
+    return this.svc.updateStatus(id, status, hotelId);
+  }
+
+  @UseGuards(JwtAuthGuard, HotelAuthGuard)
+  @Post(':id/request-feedback')
+  async requestFeedback(@Param('id') id: string) {
+    return this.svc.requestFeedback(id);
   }
 }

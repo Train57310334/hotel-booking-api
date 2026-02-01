@@ -62,6 +62,14 @@ export class NotificationsService {
     await this.createNotification('New Booking', `Booking ${booking.id.slice(-6)} confirmed for ${booking.leadName}`, 'success');
   }
 
+  // ⭐ 5. ขอ Feedback หลัง Check-out
+  async sendFeedbackRequest(booking: any) {
+    const subject = `How was your stay at ${booking.hotel.name}?`;
+    const html = this.templateFeedbackRequest(booking);
+    await this.sendEmail(booking.leadEmail, subject, html);
+    // await this.createNotification('Feedback', `Sent feedback request to ${booking.leadName}`, 'info');
+  }
+
   // --------------------------------------------------------------------
   // 🔧 UTILITIES
   // --------------------------------------------------------------------
@@ -179,6 +187,33 @@ export class NotificationsService {
               <li>Room Type: ${booking.roomType.name}</li>
             </ul>
             <p>See you soon!</p>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private templateFeedbackRequest(booking: any): string {
+    const reviewLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/review/${booking.id}`;
+    return `
+      <div style="background-color: #f0fdf4; padding: 20px; font-family: sans-serif;">
+        <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+           <div style="background-color: #10b981; padding: 20px; text-align: center; color: white;">
+             <h1 style="margin:0;">We value your feedback</h1>
+           </div>
+          <div style="padding: 30px; text-align: center;">
+            <p style="font-size: 1.1em;">Hi <b>${booking.leadName}</b>,</p>
+            <p>We hope you enjoyed your stay at <b>${booking.hotel.name}</b>.</p>
+            <p>Would you mind taking a moment to rate your experience?</p>
+            
+            <a href="${reviewLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 15px 30px; border-radius: 30px; text-decoration: none; font-weight: bold; margin: 20px 0; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.2);">
+              ★★★★★ Write a Review
+            </a>
+
+            <p style="color: #64748b; font-size: 0.9em;">Or click here: <a href="${reviewLink}" style="color: #10b981;">${reviewLink}</a></p>
+            
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 30px 0;">
+            <small style="color: #64748b;">Thank you for choosing BookingKub!</small>
           </div>
         </div>
       </div>

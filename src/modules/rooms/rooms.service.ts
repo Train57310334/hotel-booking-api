@@ -42,6 +42,24 @@ export class RoomsService {
     });
   }
 
+  async createBulk(data: { roomTypeId: string; prefix?: string; startNumber: number; count: number }) {
+    const { roomTypeId, prefix = '', startNumber, count } = data;
+    const roomsToCreate = [];
+    
+    for (let i = 0; i < count; i++) {
+      roomsToCreate.push({
+        roomTypeId,
+        roomNumber: `${prefix}${startNumber + i}`,
+      });
+    }
+
+    // Using createMany for better performance
+    return this.prisma.room.createMany({
+      data: roomsToCreate,
+      skipDuplicates: true, // Safety skip
+    });
+  }
+
   async findOne(id: string) {
     const room = await this.prisma.room.findFirst({
       where: { id, deletedAt: null },

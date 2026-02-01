@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, Query, UseGuards, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Delete, Query, UseGuards, Req } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ReviewsService } from './reviews.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -47,5 +47,12 @@ export class ReviewsController {
   @Put('admin/:id/status')
   updateStatus(@Param('id') id: string, @Body() body: { status: string }) {
     return this.svc.updateStatus(id, body.status);
+  }
+
+  @Delete('admin/:id')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  delete(@Param('id') id: string) {
+    return this.svc.delete(id);
   }
 }

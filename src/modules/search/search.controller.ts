@@ -35,5 +35,9 @@ export class SearchController {
     );
     return hotels;
   }
+  @Get('global')
+  async globalSearch(@Query('q') q: string) {
+    return this.searchService.globalSearch(q);
+  }
 }
 

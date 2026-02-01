@@ -5,47 +5,56 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 export class ReportsService {
   constructor(private prisma: PrismaService) {}
 
-  async getRevenue(from: Date, to: Date) {
-    // Group revenue by date (simplified to day)
-    // Prisma doesn't support complex date_trunc in groupBy easily without rawQuery, 
-    // but for simplicity we can fetch and aggregate in JS or use raw query if performance needed.
-    // Let's use raw query for efficiency in aggregation by day.
-    
-    // Note: Adjust timezone if needed, assuming UTC for now or database local time.
+  async getRevenue(hotelId: string, from: Date, to: Date) {
     const revenue = await this.prisma.$queryRaw`
       SELECT 
         DATE("checkIn") as date, 
         SUM("totalAmount") as value
       FROM "Booking"
-      WHERE "status" NOT IN ('cancelled', 'pending')
+      WHERE "hotelId" = ${hotelId}
+      AND "status" NOT IN ('cancelled', 'pending')
       AND "checkIn" >= ${from}
       AND "checkIn" <= ${to}
       GROUP BY DATE("checkIn")
       ORDER BY date ASC
     `;
 
-    // Process BigInt to Number if needed (Prisma returns BigInt for sums sometimes)
     return (revenue as any[]).map(r => ({
         date: new Date(r.date).toISOString().split('T')[0],
         value: Number(r.value)
     }));
   }
 
-  async getOccupancy(from: Date, to: Date) {
-    const totalRooms = 50; // Mock total rooms or fetch from Inventory sum
-    
-    // This is a bit complex to query accurately for every single day in range efficiently without a calendar table.
-    // Simplified User Approach: Get counts per checkIn date (Arrivals) vs precise occupancy.
-    // Better Approach: Iterate days in range loops (efficient for short ranges like 30 days).
+  async getExpenses(hotelId: string, from: Date, to: Date) {
+    const expenses = await this.prisma.$queryRaw`
+      SELECT 
+        DATE("date") as date, 
+        SUM("amount") as value
+      FROM "Expense"
+      WHERE "hotelId" = ${hotelId}
+      AND "date" >= ${from}
+      AND "date" <= ${to}
+      GROUP BY DATE("date")
+      ORDER BY date ASC
+    `;
+
+    return (expenses as any[]).map(r => ({
+        date: new Date(r.date).toISOString().split('T')[0],
+        value: Number(r.value)
+    }));
+  }
+
+  async getOccupancy(hotelId: string, from: Date, to: Date) {
+    // Ideally get total rooms from Hotel Room count
+    const totalRooms = await this.prisma.room.count({ where: { roomType: { hotelId } } }) || 50; 
     
     const days = [];
     for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
         const dayStr = d.toISOString().split('T')[0];
-        const nextDay = new Date(d);
-        nextDay.setDate(d.getDate() + 1);
-
+        
         const occupied = await this.prisma.booking.count({
             where: {
+                hotelId,
                 status: { in: ['confirmed', 'checked_in'] },
                 checkIn: { lte: d },
                 checkOut: { gt: d }
@@ -54,23 +63,22 @@ export class ReportsService {
         
         days.push({
             date: dayStr,
-            rate: Math.round((occupied / totalRooms) * 100)
+            rate: totalRooms > 0 ? Math.round((occupied / totalRooms) * 100) : 0
         });
     }
     return days;
   }
 
-  async getBookingSources(from: Date, to: Date) {
-    // Mocking sources since we don't have a 'source' field, using Payment Provider or RoomType as proxy for variety
+  async getBookingSources(hotelId: string, from: Date, to: Date) {
     const byRoomType = await this.prisma.booking.groupBy({
         by: ['roomTypeId'],
         _count: { id: true },
         where: {
+            hotelId,
             createdAt: { gte: from, lte: to }
         }
     });
 
-    // Resolve names
     const roomTypes = await this.prisma.roomType.findMany({
         where: { id: { in: byRoomType.map(b => b.roomTypeId) } }
     });
@@ -81,21 +89,32 @@ export class ReportsService {
     }));
   }
 
-  async getSummary(from: Date, to: Date) {
+  async getSummary(hotelId: string, from: Date, to: Date) {
       const revenue = await this.prisma.booking.aggregate({
           _sum: { totalAmount: true },
           where: { 
+              hotelId,
               createdAt: { gte: from, lte: to },
               status: { not: 'cancelled' }
           }
       });
       
       const bookings = await this.prisma.booking.count({
-          where: { createdAt: { gte: from, lte: to } }
+          where: { hotelId, createdAt: { gte: from, lte: to } }
       });
 
+      const expenses = await (this.prisma as any).expense.aggregate({
+          _sum: { amount: true },
+          where: { hotelId, date: { gte: from, lte: to } }
+      });
+
+      const totalRevenue = revenue._sum.totalAmount || 0;
+      const totalExpenses = expenses._sum.amount || 0;
+
       return {
-          totalRevenue: revenue._sum.totalAmount || 0,
+          totalRevenue,
+          totalExpenses,
+          totalProfit: totalRevenue - totalExpenses,
           totalBookings: bookings
       };
   }
