@@ -25,6 +25,8 @@ import { UploadModule } from '@/modules/upload/upload.module';
 import { MessagesModule } from '@/modules/messages/messages.module';
 import { SettingsModule } from '@/modules/settings/settings.module';
 
+import { ExpensesModule } from './modules/expenses/expenses.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -39,7 +41,6 @@ import { SettingsModule } from '@/modules/settings/settings.module';
     MessagesModule,
     SettingsModule,
     InventoryModule,
-    BookingsModule,
     NotificationsModule,
     PaymentsModule,
     PricingModule,
@@ -50,6 +51,7 @@ import { SettingsModule } from '@/modules/settings/settings.module';
     AvailabilityModule,
     RatesModule,
     OwnersModule,
+    ExpensesModule,
   ],
   providers: [PrismaService],
 })

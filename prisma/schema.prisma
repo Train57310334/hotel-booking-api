@@ -76,6 +76,8 @@ model Hotel {
   latitude    Float?
   longitude   Float?
   imageUrl    String? // URL to hotel image
+  logoUrl     String? // Brand Logo
+  images      String[] @default([]) // Gallery/Slider images
   amenities   String[] @default([])
 
   // Content Management
@@ -83,6 +85,12 @@ model Hotel {
   contactPhone    String?
   heroTitle       String?
   heroDescription String?
+
+  // Payment Configuration
+  promptPayId       String?
+  bankName          String?
+  bankAccountName   String?
+  bankAccountNumber String?
 
   // RBAC: owner of this hotel
   ownerId String?
@@ -93,6 +101,7 @@ model Hotel {
   ratePlans  RatePlan[]
   bookings   Booking[]
   promotions Promotion[]
+  expenses   Expense[]
 
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
@@ -289,4 +298,18 @@ model Notification {
   userId    String?  // Optional: specific to a user
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+model Expense {
+  id        String   @id @default(cuid())
+  hotelId   String
+  title     String
+  amount    Int // In Subunits (e.g. Satang) or Integer THB depending on convention. Assuming Integer THB based on Booking.totalAmount
+  date      DateTime
+  category  String   @default("general") // utilities, salary, maintenance, marketing
+  
+  hotel     Hotel    @relation(fields: [hotelId], references: [id])
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

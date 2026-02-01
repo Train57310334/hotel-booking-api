@@ -73,6 +73,50 @@ export class RatesService {
     });
   }
 
+  async upsertOverrideBulk(data: {
+    roomTypeId: string;
+    ratePlanId: string;
+    startDate: string;
+    endDate: string;
+    baseRate: number;
+    reason?: string;
+  }) {
+      const start = new Date(data.startDate);
+      const end = new Date(data.endDate);
+      const dates = [];
+
+      let d = new Date(start);
+      while (d <= end) {
+        dates.push(new Date(d));
+        d.setDate(d.getDate() + 1);
+      }
+
+      const operations = dates.map(date => {
+          return this.prisma.rateOverride.upsert({
+              where: {
+                  roomTypeId_ratePlanId_date: {
+                      roomTypeId: data.roomTypeId,
+                      ratePlanId: data.ratePlanId,
+                      date
+                  }
+              },
+              create: {
+                  roomTypeId: data.roomTypeId,
+                  ratePlanId: data.ratePlanId,
+                  date,
+                  baseRate: data.baseRate,
+                  reason: data.reason
+              },
+              update: {
+                  baseRate: data.baseRate,
+                  reason: data.reason
+              }
+          });
+      });
+
+      return this.prisma.$transaction(operations);
+  }
+
   async getOverrides(roomTypeId: string, startDate: string, endDate: string) {
       return this.prisma.rateOverride.findMany({
           where: {

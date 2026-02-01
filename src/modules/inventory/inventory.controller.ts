@@ -6,6 +6,7 @@ import {
   Body,
   Patch,
   UseGuards,
+  Post,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { InventoryService } from './inventory.service';
@@ -41,5 +42,17 @@ export class InventoryController {
     @Body() body: UpdateInventoryDto,
   ) {
     return this.inventoryService.updateInventory(roomTypeId, date, body);
+  }
+
+  @Roles(Role.HotelAdmin, Role.PlatformAdmin)
+  @Post('bulk')
+  async updateBulk(
+    @Body() body: { roomTypeId: string; startDate: string; endDate: string; allotment?: number; stopSale?: boolean; minStay?: number }
+  ) {
+    return this.inventoryService.updateBulk(body.roomTypeId, body.startDate, body.endDate, {
+      allotment: body.allotment,
+      stopSale: body.stopSale,
+      minStay: body.minStay
+    });
   }
 }

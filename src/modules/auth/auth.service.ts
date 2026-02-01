@@ -30,7 +30,10 @@ export class AuthService {
 
   // ✅ Login
   async login(data: { email: string; password: string }) {
-    const user = await this.prisma.user.findUnique({ where: { email: data.email } });
+    const user = await this.prisma.user.findUnique({ 
+        where: { email: data.email },
+        include: { roleAssignments: true } // Fetch assignments
+    });
     if (!user) throw new UnauthorizedException('Invalid email or password');
 
     const valid = await bcrypt.compare(data.password, user.passwordHash);
@@ -44,13 +47,32 @@ export class AuthService {
   async getProfile(userId: string) {
     return this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, name: true, phone: true, roles: true },
+      select: { 
+        id: true, 
+        email: true, 
+        name: true, 
+        phone: true, 
+        roles: true,
+        roleAssignments: {
+            include: { hotel: true }
+        }
+      },
     });
   }
 
   // ✅ Helper: JWT Token
   private generateToken(user: any) {
-    const payload = { sub: user.id, email: user.email, roles: user.roles };
+    // Find first hotelId from assignments if available
+    const hotelId = user.roleAssignments && user.roleAssignments.length > 0 
+        ? user.roleAssignments[0].hotelId 
+        : null;
+
+    const payload = { 
+        sub: user.id, 
+        email: user.email, 
+        roles: user.roles,
+        hotelId // Add to payload
+    };
     return this.jwtService.sign(payload);
   }
 }

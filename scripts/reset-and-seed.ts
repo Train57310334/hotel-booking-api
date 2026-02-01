@@ -7,9 +7,11 @@ async function main() {
   console.log('🧹 Cleaning up database...');
 
   // Delete in order to avoid foreign key constraints
-  // 0. Payments (depend on Bookings)
+  // 0. Payments, Expenses, RoleAssignments
   await prisma.payment.deleteMany({});
-  console.log('✅ Deleted all Payments');
+  await prisma.expense.deleteMany({});
+  await prisma.roleAssignment.deleteMany({});
+  console.log('✅ Deleted Payments, Expenses, RoleAssignments');
 
   // 1. Bookings (depend on Rooms/Users)
   await prisma.booking.deleteMany({});
@@ -22,7 +24,7 @@ async function main() {
   // 3. Room Inventory/Rates Overrides
   await prisma.inventoryCalendar.deleteMany({});
   await prisma.rateOverride.deleteMany({});
-  await prisma.ratePlan.deleteMany({}); // Only if cascading allows, otherwise might fail if linked to Bookings (already deleted)
+  await prisma.ratePlan.deleteMany({}); 
   console.log('✅ Deleted overrides & rate plans');
 
   // 4. Physical Rooms
@@ -33,24 +35,44 @@ async function main() {
   await prisma.roomType.deleteMany({});
   console.log('✅ Deleted all Room Types');
 
-  // 6. Hotels (Optional, maybe keep the main one? But let's reset to be sure)
-  // Assuming a single hotel system mostly, but let's check
-  const hotels = await prisma.hotel.findMany();
-  if (hotels.length === 0) {
-      console.log('creating hotel...');
-      await prisma.hotel.create({
+  // 5.1 Promotions
+  await prisma.promotion.deleteMany({});
+
+  // 6. Hotels - Clean Wipe
+  await prisma.hotel.deleteMany({});
+  console.log('✅ Deleted all Hotels');
+
+  console.log('creating hotel...');
+  const hotel = await prisma.hotel.create({
+      data: {
+          name: 'BookingKub Hotel',
+          address: '123 Bangkok',
+          description: 'Luxury hotel in the heart of Bangkok',
+          amenities: ['Pool', 'Gym', 'Wifi']
+      }
+  });
+  
+  const hotelId = hotel.id;
+
+  // 6.1 Assign First User as Admin (so they can access it)
+  const firstUser = await prisma.user.findFirst();
+  if (firstUser) {
+      await prisma.roleAssignment.create({
           data: {
-              name: 'BookingKub Hotel',
-              address: '123 Bangkok',
-              description: 'Luxury hotel in the heart of Bangkok',
-              amenities: ['Pool', 'Gym', 'Wifi']
+              userId: firstUser.id,
+              hotelId: hotel.id,
+              role: 'hotel_admin'
           }
       });
-  } else {
-      console.log('Using existing hotel:', hotels[0].name);
+      // Ensure role in user object too
+       if (!firstUser.roles.includes('hotel_admin')) {
+        await prisma.user.update({
+          where: { id: firstUser.id },
+          data: { roles: { push: 'hotel_admin' } }
+        });
+      }
+      console.log(`✅ Assigned User ${firstUser.email} to ${hotel.name}`);
   }
-  
-  const hotelId = (await prisma.hotel.findFirst()).id;
 
   console.log('🌱 Seeding fresh data...');
 

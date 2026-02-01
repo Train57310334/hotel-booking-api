@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '@/common/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { InventoryService } from '@/modules/inventory/inventory.service';
@@ -193,12 +193,13 @@ export class BookingsService {
   }
 
   /** 👮 Admin: ยกเลิกการจอง (ไม่ต้องเช็ค Owner) */
-  async cancelBookingByAdmin(bookingId: string) {
+  async cancelBookingByAdmin(bookingId: string, hotelId: string) {
     const booking = await this.prisma.booking.findUnique({
       where: { id: bookingId },
       include: { hotel: true }
     });
     if (!booking) throw new NotFoundException('Booking not found');
+    if (booking.hotelId !== hotelId) throw new ForbiddenException('Booking does not belong to this hotel');
 
     await this.notificationsService.sendCancellationEmail(booking);
 
@@ -206,6 +207,17 @@ export class BookingsService {
       where: { id: bookingId },
       data: { status: 'cancelled' },
     });
+  }
+
+  async requestFeedback(id: string) {
+    const booking = await this.prisma.booking.findUnique({
+        where: { id },
+        include: { hotel: true, roomType: true }
+    });
+    if (!booking) throw new NotFoundException('Booking not found');
+
+    await this.notificationsService.sendFeedbackRequest(booking);
+    return { success: true, message: 'Feedback request sent' };
   }
 
   async find(id: string) {
@@ -222,8 +234,8 @@ export class BookingsService {
     if (!booking) throw new NotFoundException(`Booking with ID ${id} not found`);
     return booking;
   }
-  async findAll(search?: string, status?: string, sortBy: string = 'createdAt', order: string = 'desc') {
-    const where: Prisma.BookingWhereInput = {};
+  async findAll(hotelId: string, search?: string, status?: string, sortBy: string = 'createdAt', order: string = 'desc') {
+    const where: Prisma.BookingWhereInput = { hotelId };
 
     if (status && status !== 'All') {
       where.status = status.toLowerCase();
@@ -260,7 +272,11 @@ export class BookingsService {
 
 
 
-  async updateStatus(bookingId: string, status: string) {
+  async updateStatus(bookingId: string, status: string, hotelId: string) {
+    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) throw new NotFoundException('Booking not found');
+    if (booking.hotelId !== hotelId) throw new ForbiddenException('Booking does not belong to this hotel');
+
     return this.prisma.booking.update({
       where: { id: bookingId },
       data: { status },
@@ -418,12 +434,14 @@ export class BookingsService {
     };
   }
 
-  async getCalendarBookings(month: number, year: number) {
+  async getCalendarBookings(hotelId: string, month: number, year: number) {
+    if (!hotelId) throw new BadRequestException('Hotel ID Required');
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0);
 
     const bookings = await this.prisma.booking.findMany({
       where: {
+        hotelId,
         checkIn: { lte: endDate },
         checkOut: { gte: startDate },
         status: { not: 'cancelled' }
@@ -448,12 +466,14 @@ export class BookingsService {
     return result;
   }
 
-  async getCalendarEvents(start: string, end: string) {
+  async getCalendarEvents(hotelId: string, start: string, end: string) {
+    if (!hotelId) throw new BadRequestException('Hotel ID Required');
     const startDate = new Date(start);
     const endDate = new Date(end);
 
     return this.prisma.booking.findMany({
       where: {
+        hotelId,
         status: { not: 'cancelled' },
         checkIn: { lt: endDate },
         checkOut: { gt: startDate }
@@ -540,7 +560,8 @@ export class BookingsService {
   }
 
 
-  async getDashboardStatsNew(period: string = 'month') {
+  async getDashboardStatsNew(hotelId: string, period: string = 'month') {
+    if (!hotelId) throw new BadRequestException('Hotel ID is required for dashboard stats');
     const now = new Date();
     let startDate = new Date();
 
@@ -552,6 +573,7 @@ export class BookingsService {
 
     const bookings = await this.prisma.booking.findMany({
       where: {
+        hotelId,
         createdAt: { gte: startDate },
         status: { not: 'cancelled' }
       }
@@ -563,15 +585,18 @@ export class BookingsService {
 
     const todayStr = new Date().toISOString().split('T')[0];
     const checkIns = await this.prisma.booking.count({ 
-        where: { checkIn: { gte: new Date(todayStr), lt: new Date(new Date(todayStr).getTime() + 86400000) }, status: 'confirmed' } 
+        where: { hotelId, checkIn: { gte: new Date(todayStr), lt: new Date(new Date(todayStr).getTime() + 86400000) }, status: 'confirmed' } 
     });
     const checkOuts = await this.prisma.booking.count({ 
-        where: { checkOut: { gte: new Date(todayStr), lt: new Date(new Date(todayStr).getTime() + 86400000) }, status: 'confirmed' } 
+        where: { hotelId, checkOut: { gte: new Date(todayStr), lt: new Date(new Date(todayStr).getTime() + 86400000) }, status: 'confirmed' } 
     });
 
-    const totalRooms = await this.prisma.room.count();
+    const totalRooms = await this.prisma.room.count({
+        where: { roomType: { hotelId } }
+    });
     const activeBookings = await this.prisma.booking.count({
         where: {
+            hotelId,
             checkIn: { lte: now },
             checkOut: { gt: now },
             status: { in: ['confirmed', 'checked_in'] }
@@ -588,6 +613,7 @@ export class BookingsService {
     });
     
     const chartData = Array.from(chartMap, ([name, value]) => ({ name, value }));
+    const occupancyChart = []; // Fallback empty or implement logic similar to getDashboardStats if needed used by frontend.
 
     return {
         totalBookings,
@@ -599,11 +625,7 @@ export class BookingsService {
         availableRooms: safeTotalRooms - activeBookings,
         occupancyRate,
         chartData,
-        occupancyChart: [
-             { name: 'Mon', value: 40 }, { name: 'Tue', value: 30 }, 
-             { name: 'Wed', value: occupancyRate }, { name: 'Thu', value: 60 }, 
-             { name: 'Fri', value: 80 }, { name: 'Sat', value: 90 }, { name: 'Sun', value: 70 }
-        ]
+        occupancyChart: occupancyChart.reverse()
     };
   }
 }

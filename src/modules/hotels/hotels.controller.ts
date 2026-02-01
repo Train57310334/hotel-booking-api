@@ -1,4 +1,5 @@
-import { Controller, Get, Param, Query, Put, Body } from '@nestjs/common';
+import { Controller, Get, Param, Query, Put, Post, Body, UseGuards, Req } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiTags } from '@nestjs/swagger';
 import { HotelsService } from './hotels.service';
 
@@ -6,6 +7,12 @@ import { HotelsService } from './hotels.service';
 @Controller('hotels')
 export class HotelsController {
   constructor(private hotels: HotelsService) {}
+
+  @Post()
+  @UseGuards(JwtAuthGuard)
+  create(@Req() req, @Body() body: any) {
+    return this.hotels.create(req.user.userId, body);
+  }
 
   @Get()
   list(@Query() query: { checkIn?: string; checkOut?: string; guests?: string }) {
