@@ -1,5 +1,7 @@
 import { Controller, Get, Param, Query, Put, Post, Body, UseGuards, Req } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { ApiTags } from '@nestjs/swagger';
 import { HotelsService } from './hotels.service';
 
@@ -9,7 +11,8 @@ export class HotelsController {
   constructor(private hotels: HotelsService) {}
 
   @Post()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('platform_admin', 'hotel_admin', 'owner') // Only owners can create hotels? or Platform Admin
   create(@Req() req, @Body() body: any) {
     return this.hotels.create(req.user.userId, body);
   }
@@ -31,6 +34,8 @@ export class HotelsController {
   }
 
   @Put(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin')
   update(@Param('id') id: string, @Body() body: any) {
     return this.hotels.update(id, body);
   }

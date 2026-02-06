@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { SettingsController } from './settings.controller';
+import { SettingsController, PublicSettingsController } from './settings.controller';
 import { SettingsService } from './settings.service';
 
 @Module({
-  controllers: [SettingsController],
+  controllers: [SettingsController, PublicSettingsController],
   providers: [SettingsService],
   exports: [SettingsService]
 })

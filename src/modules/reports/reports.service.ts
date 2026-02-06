@@ -118,4 +118,16 @@ export class ReportsService {
           totalBookings: bookings
       };
   }
+
+  async getDefaultHotelId() {
+      const hotel = await this.prisma.hotel.findFirst();
+      return hotel?.id;
+  }
+
+  async getDailyStats() {
+      return this.prisma.dailyStat.findMany({
+          orderBy: { date: 'desc' },
+          take: 30
+      });
+  }
 }

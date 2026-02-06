@@ -28,6 +28,7 @@ model User {
   name         String?
   phone        String?
   roles        String[] @default([]) // user, hotel_admin, platform_admin
+  avatarUrl    String?
   
   // CRM Fields
   tags         String[] @default([]) // VIP, Blacklist, Corporate
@@ -41,6 +42,7 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   Hotel     Hotel[]
+  roomUpdates RoomStatusLog[]
 }
 
 //
@@ -108,14 +110,7 @@ model Hotel {
   RoleAssignment RoleAssignment[]
 }
 
-model Room {
-  id         String   @id @default(cuid())
-  roomTypeId String
-  roomType   RoomType @relation("RoomTypeRooms", fields: [roomTypeId], references: [id])
-  bookings    Booking[]  @relation("RoomBookings")
-  roomNumber  String? // Optional for now to avoid breaking existing data immediately, but logic will enforce it
-  deletedAt   DateTime?
-}
+
 
 model RoomType {
   id        String              @id @default(cuid())
@@ -139,6 +134,56 @@ model RoomType {
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @default(now()) @updatedAt
   deletedAt   DateTime?
+}
+
+enum RoomStatus {
+  CLEAN
+  DIRTY
+  CLEANING
+  INSPECTED
+  OOO
+}
+
+model Room {
+  id         String   @id @default(cuid())
+  roomTypeId String
+  roomType   RoomType @relation("RoomTypeRooms", fields: [roomTypeId], references: [id])
+  bookings    Booking[]  @relation("RoomBookings")
+  roomNumber  String? 
+  status      RoomStatus @default(CLEAN)
+  statusLogs  RoomStatusLog[]
+  deletedAt   DateTime?
+}
+
+model RoomStatusLog {
+  id        String   @id @default(cuid())
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id])
+  status    RoomStatus
+  
+  updatedBy String? 
+  user      User?   @relation(fields: [updatedBy], references: [id])
+
+  note      String?
+
+  createdAt DateTime @default(now())
+
+  @@index([roomId])
+}
+
+model DailyStat {
+  id            String   @id @default(cuid())
+  date          DateTime @unique // The date this stat represents (midnight)
+  
+  totalRevenue  Float    @default(0) // Revenue recognized for this day
+  totalBookings Int      @default(0) // Active bookings touching this day
+  occupiedRooms Int      @default(0) // Physical count
+  occupancyRate Float    @default(0) // Percentage (0-100)
+  
+  adr           Float    @default(0) // Average Daily Rate = Revenue / Occupied
+  revPar        Float    @default(0) // Revenue Per Available Room = Revenue / Total Rooms
+  
+  createdAt     DateTime @default(now())
 }
 
 model InventoryCalendar {
@@ -235,6 +280,23 @@ model Booking {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  
+  guests    Guest[]
+  folioCharges FolioCharge[]
+}
+
+model Guest {
+  id          String   @id @default(cuid())
+  bookingId   String
+  name        String
+  idType      String   @default("passport") // passport, national_id, driving_license
+  idNumber    String?
+  documentUrl String?  // Path to uploaded ID image
+  
+  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Payment {
@@ -246,7 +308,29 @@ model Payment {
   amount    Int
   currency  String  @default("THB")
   status    String // created/authorized/captured/voided/refunded/failed
+  method    String? // card, promptpay, cash
+  
   booking   Booking @relation(fields: [bookingId], references: [id])
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt @default(now())
+}
+
+model FolioCharge {
+  id          String   @id @default(cuid())
+  bookingId   String
+  description String
+  amount      Int      // In THB
+  type        String   @default("OTHER") // ROOM_SERVICE, LAUNDRY, MINIBAR, DAMAGE, OTHER
+  date        DateTime @default(now())
+  
+  createdBy   String?
+  // user     User?    @relation(fields: [createdBy], references: [id]) // Optional: track who added charge
+
+  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 //

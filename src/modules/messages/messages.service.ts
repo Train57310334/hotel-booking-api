@@ -46,4 +46,17 @@ export class MessagesService {
       data: { status: 'replied' }, // simplistic status
     });
   }
+
+  async archive(id: string) {
+    return (this.prisma as any).message.update({
+      where: { id },
+      data: { status: 'archived' }
+    });
+  }
+
+  async delete(id: string) {
+    return (this.prisma as any).message.delete({
+      where: { id }
+    });
+  }
 }

@@ -26,6 +26,12 @@ export class UsersController {
     return this.svc.update(req.user.userId, body);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Put('me/change-password')
+  async changePassword(@Req() req: any, @Body() body: any) {
+    return this.svc.changePassword(req.user.userId, body.currentPassword, body.newPassword);
+  }
+
   // Admin Endpoints
   @UseGuards(JwtAuthGuard)
   @Get(':id')

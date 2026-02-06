@@ -13,6 +13,8 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { BookingsService } from './bookings.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard'; // Added
+import { Roles } from '../auth/decorators/roles.decorator'; // Added
 import { HotelAuthGuard } from '../auth/guards/hotel-auth.guard';
 
 import { IsString, IsNumber, IsOptional, IsObject, IsEmail, IsDateString } from 'class-validator';
@@ -218,6 +220,7 @@ export class BookingsController {
   async getAllBookings(
     @Req() req, 
     @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
     @Query('hotelId') hotelId: string,
     @Query('search') search?: string,
     @Query('status') status?: string,
@@ -225,13 +228,14 @@ export class BookingsController {
   ) {
     // TODO: Add Role Guard here
     if (!hotelId) throw new ForbiddenException('Hotel ID is required');
-    return this.svc.findAll(hotelId, search, status, 'createdAt', order);
+    return this.svc.findAll(hotelId, search, status, 'createdAt', order, page, limit);
   }
 
   /**
    * 👮 Admin: Cancel Booking
    */
-  @UseGuards(JwtAuthGuard, HotelAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, HotelAuthGuard) // Added RolesGuard
+  @Roles('owner', 'admin') // Only Admin/Owner can force cancel
   @Put('admin/:id/cancel')
   async cancelBookingByAdmin(@Param('id') bookingId: string, @Query('hotelId') hotelId: string) {
     if (!hotelId) throw new ForbiddenException('Hotel ID is required');
@@ -241,12 +245,14 @@ export class BookingsController {
   /**
    * ✏️ Admin: Update Booking Status
    */
-  @UseGuards(JwtAuthGuard, HotelAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, HotelAuthGuard)
+  @Roles('owner', 'admin', 'reception') // Reception can check-in/out
   @Put('admin/:id/status')
-  async updateStatus(@Param('id') id: string, @Body('status') status: string, @Query('hotelId') hotelId: string) {
+  async updateStatus(@Req() req, @Param('id') id: string, @Body('status') status: string, @Query('hotelId') hotelId: string) {
     // TODO: Add Role Guard here
     if (!hotelId) throw new ForbiddenException('Hotel ID is required');
-    return this.svc.updateStatus(id, status, hotelId);
+    const userId = req.user?.userId;
+    return this.svc.updateStatus(id, status, hotelId, userId);
   }
 
   @UseGuards(JwtAuthGuard, HotelAuthGuard)
