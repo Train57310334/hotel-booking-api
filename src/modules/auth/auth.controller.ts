@@ -14,6 +14,12 @@ export class AuthController {
     return this.authService.register(body);
   }
 
+  /** 🏨 ลงทะเบียนพาร์ทเนอร์ (เจ้าของโรงแรม) */
+  @Post('register-partner')
+  async registerPartner(@Body() body: { hotelName: string; email: string; password: string; name: string; phone?: string }) {
+    return this.authService.registerPartner(body);
+  }
+
   /** 🔑 เข้าสู่ระบบ */
   @Post('login')
   async login(@Body() body: { email: string; password: string }) {

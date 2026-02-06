@@ -1,23 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
-  private transporter: nodemailer.Transporter;
 
-  constructor(private prisma: PrismaService) {
-    this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  }
+  constructor(
+    private prisma: PrismaService,
+    private settingsService: SettingsService
+  ) {}
 
   // 🔔 Create DB Notification
   async createNotification(title: string, message: string, type: string = 'info') {
@@ -74,15 +67,47 @@ export class NotificationsService {
   // 🔧 UTILITIES
   // --------------------------------------------------------------------
 
+  private async getTransporter() {
+    // Fetch dynamic settings
+    const host = await this.settingsService.get('smtpHost', 'SMTP_HOST');
+    const port = await this.settingsService.get('smtpPort', 'SMTP_PORT');
+    const user = await this.settingsService.get('smtpUser', 'SMTP_USER');
+    const pass = await this.settingsService.get('smtpPass', 'SMTP_PASS');
+
+    if (!host || !user || !pass) {
+        this.logger.warn('SMTP Settings missing. Email will not be sent.');
+        return null;
+    }
+
+    return nodemailer.createTransport({
+      host,
+      port: Number(port) || 587,
+      secure: false, // true for 465, false for other ports
+      auth: { user, pass },
+    });
+  }
+
   private async sendEmail(to: string, subject: string, html: string) {
     try {
-      await this.transporter.sendMail({
-        from: process.env.MAIL_FROM || '"Hotel Booking" <no-reply@hotel.com>',
+      const transporter = await this.getTransporter();
+      if (!transporter) return;
+
+      const fromName = await this.settingsService.get('siteName', 'APP_NAME') || 'Hotel Booking';
+      const fromEmail = await this.settingsService.get('smtpUser', 'SMTP_USER') || 'no-reply@hotel.com';
+
+      const info = await transporter.sendMail({
+        from: `"${fromName}" <${fromEmail}>`,
         to,
         subject,
         html,
       });
       this.logger.log(`Email sent to ${to}: ${subject}`);
+      
+      // 🧪 Log Preview URL (for Ethereal/Test accounts)
+      const previewUrl = nodemailer.getTestMessageUrl(info);
+      if (previewUrl) {
+          this.logger.log(`📧 Preview Email: ${previewUrl}`);
+      }
     } catch (error) {
       this.logger.error(`Failed to send email: ${subject}`, error);
     }

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaService } from '@/common/prisma/prisma.service';
 import { PrismaModule } from '@/common/prisma/prisma.module';
 
@@ -26,10 +27,16 @@ import { MessagesModule } from '@/modules/messages/messages.module';
 import { SettingsModule } from '@/modules/settings/settings.module';
 
 import { ExpensesModule } from './modules/expenses/expenses.module';
+import { GuestsModule } from './modules/guests/guests.module';
+import { StaffModule } from './modules/staff/staff.module';
+import { StaffModule } from './modules/staff/staff.module';
+import { NightAuditModule } from './modules/night-audit/night-audit.module';
+import { FolioModule } from './modules/folio/folio.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -52,6 +59,10 @@ import { ExpensesModule } from './modules/expenses/expenses.module';
     RatesModule,
     OwnersModule,
     ExpensesModule,
+    GuestsModule,
+    StaffModule,
+    NightAuditModule,
+    FolioModule, // Registered
   ],
   providers: [PrismaService],
 })

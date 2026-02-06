@@ -42,6 +42,23 @@ export class PromotionsService {
     return this.prisma.promotion.delete({ where: { id } });
   }
 
+  async update(id: string, data: Prisma.PromotionUncheckedUpdateInput) {
+    // If updating code, check uniqueness
+    if (data.code) {
+       const existing = await this.prisma.promotion.findUnique({ where: { code: data.code as string } });
+       if (existing && existing.id !== id) throw new BadRequestException('Code already exists');
+    }
+
+    return this.prisma.promotion.update({
+        where: { id },
+        data: {
+            ...data,
+            startDate: data.startDate ? new Date(data.startDate as string) : undefined,
+            endDate: data.endDate ? new Date(data.endDate as string) : undefined
+        }
+    });
+  }
+
   async validateCode(code: string, purchaseAmount: number) {
     const promo = await this.prisma.promotion.findUnique({
       where: { code }

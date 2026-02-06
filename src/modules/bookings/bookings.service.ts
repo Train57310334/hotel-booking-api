@@ -228,13 +228,14 @@ export class BookingsService {
         roomType: true,
         ratePlan: true,
         payment: true,
+        guests: true,
       },
     });
 
     if (!booking) throw new NotFoundException(`Booking with ID ${id} not found`);
     return booking;
   }
-  async findAll(hotelId: string, search?: string, status?: string, sortBy: string = 'createdAt', order: string = 'desc') {
+  async findAll(hotelId: string, search?: string, status?: string, sortBy: string = 'createdAt', order: string = 'desc', page: number = 1, limit: number = 20) {
     const where: Prisma.BookingWhereInput = { hotelId };
 
     if (status && status !== 'All') {
@@ -257,30 +258,69 @@ export class BookingsService {
         orderBy.createdAt = 'desc';
     }
 
-    return this.prisma.booking.findMany({
-      where,
-      include: {
-        hotel: true,
-        user: true,
-        roomType: true,
-        room: true,
-        payment: true,
-      },
-      orderBy,
-    });
+    const [data, total] = await Promise.all([
+        this.prisma.booking.findMany({
+            where,
+            include: {
+                hotel: true,
+                user: true,
+                roomType: true,
+                room: true,
+                payment: true,
+                guests: true,
+            },
+            orderBy,
+            skip: (page - 1) * limit,
+            take: Number(limit),
+        }),
+        this.prisma.booking.count({ where })
+    ]);
+
+    return {
+        data,
+        meta: {
+            total,
+            page: Number(page),
+            last_page: Math.ceil(total / limit),
+            limit: Number(limit)
+        }
+    };
   }
 
 
 
-  async updateStatus(bookingId: string, status: string, hotelId: string) {
-    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+  async updateStatus(bookingId: string, status: string, hotelId: string, userId?: string) {
+    const booking = await this.prisma.booking.findUnique({ 
+        where: { id: bookingId },
+        include: { room: true }
+    });
     if (!booking) throw new NotFoundException('Booking not found');
     if (booking.hotelId !== hotelId) throw new ForbiddenException('Booking does not belong to this hotel');
 
-    return this.prisma.booking.update({
+    const updatedBooking = await this.prisma.booking.update({
       where: { id: bookingId },
       data: { status },
     });
+
+    // 🧹 Housekeeping Logic: Auto-Dirty on Checkout
+    if (status === 'checked_out' && booking.roomId) {
+        await this.prisma.$transaction([
+            this.prisma.room.update({
+                where: { id: booking.roomId },
+                data: { status: 'DIRTY' }
+            }),
+            this.prisma.roomStatusLog.create({
+                data: {
+                    roomId: booking.roomId,
+                    status: 'DIRTY',
+                    updatedBy: userId,
+                    note: `Auto-dirty upon checkout of Booking #${booking.id.slice(0,8)}`
+                }
+            })
+        ]);
+    }
+
+    return updatedBooking;
   }
 
   async getDashboardStats(period: string = 'month') {

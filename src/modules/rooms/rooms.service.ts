@@ -26,6 +26,10 @@ export class RoomsService {
                checkOut: { gt: new Date() }
            },
            take: 1
+        },
+        statusLogs: {
+            orderBy: { createdAt: 'desc' },
+            take: 1
         }
       },
       orderBy: { roomNumber: 'asc' } // or number if added
@@ -84,6 +88,23 @@ export class RoomsService {
     return this.prisma.room.update({
       where: { id },
       data: { deletedAt: new Date() }
+    });
+  }
+
+  async updateStatus(id: string, status: any, userId?: string, note?: string) {
+    // Create Log
+    await this.prisma.roomStatusLog.create({
+        data: {
+            roomId: id,
+            status: status,
+            updatedBy: userId,
+            note: note
+        }
+    });
+
+    return this.prisma.room.update({
+      where: { id },
+      data: { status }
     });
   }
 }
