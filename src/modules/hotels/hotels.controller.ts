@@ -33,10 +33,10 @@ export class HotelsController {
     return this.hotels.find(id);
   }
 
-  @Put(':id')
+  @Put(':hotelId')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('owner', 'admin')
-  update(@Param('id') id: string, @Body() body: any) {
+  update(@Param('hotelId') id: string, @Body() body: any) {
     return this.hotels.update(id, body);
   }
 }

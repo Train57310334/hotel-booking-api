@@ -11,8 +11,8 @@ export class MessagesController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Get()
-  findAll(@Query('search') search?: string) {
-    return this.svc.findAll(search);
+  findAll(@Query('search') search?: string, @Query('hotelId') hotelId?: string) {
+    return this.svc.findAll(search, hotelId);
   }
 
   // Public endpoint for "Contact Us" form

@@ -11,9 +11,12 @@ export class RoomTypesService {
     });
   }
 
-  findAll() {
+  findAll(hotelId?: string) {
+    const where: any = { deletedAt: null };
+    if (hotelId) where.hotelId = hotelId;
+
     return this.prisma.roomType.findMany({
-      where: { deletedAt: null },
+      where,
       orderBy: { createdAt: 'desc' },
       include: {
         hotel: true,
