@@ -14,12 +14,9 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { email } });
   }
 
-  async findAll(search?: string) {
+  async findAll(search?: string, hotelId?: string) {
     const where: any = {};
-    // Optional: Filter strict 'user' role if enforced, 
-    // but typically guests are just users.
-    // where.roles = { has: 'user' }; 
-
+    
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
@@ -28,11 +25,19 @@ export class UsersService {
       ];
     }
 
+    if (hotelId) {
+       where.bookings = { some: { hotelId } };
+    }
+
+    // Filter count and last booking based on hotelId too
     return this.prisma.user.findMany({
       where,
       include: {
-        _count: { select: { bookings: true } },
+        _count: { 
+            select: { bookings: { where: hotelId ? { hotelId } : {} } } 
+        },
         bookings: {
+           where: hotelId ? { hotelId } : {},
            take: 1,
            orderBy: { createdAt: 'desc' },
            select: { createdAt: true }

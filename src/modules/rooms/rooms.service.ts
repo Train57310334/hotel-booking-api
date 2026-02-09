@@ -1,14 +1,20 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '@/common/prisma/prisma.service';
 
 @Injectable()
 export class RoomsService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(search?: string) {
+  async findAll(search?: string, hotelId?: string) {
     const where: any = {
       deletedAt: null, // Filter out deleted rooms
     };
+
+    if (hotelId) {
+      where.roomType = {
+        hotelId: hotelId
+      };
+    }
     
     // In real app, search by room number or typelike
     // Since Room entity in current schema just has 'id' and 'roomTypeId',
@@ -38,12 +44,19 @@ export class RoomsService {
 
   async create(data: any) {
     // data.roomTypeId is required
-    return this.prisma.room.create({
-      data: {
-        roomTypeId: data.roomTypeId,
-        roomNumber: data.roomNumber,
+    try {
+      return await this.prisma.room.create({
+        data: {
+          roomTypeId: data.roomTypeId,
+          roomNumber: data.roomNumber,
+        }
+      });
+    } catch (error) {
+      if (error.code === 'P2002') {
+        throw new ConflictException('Room number already exists');
       }
-    });
+      throw error;
+    }
   }
 
   async createBulk(data: { roomTypeId: string; prefix?: string; startNumber: number; count: number }) {
@@ -74,13 +87,23 @@ export class RoomsService {
   }
 
   async update(id: string, data: any) {
-    return this.prisma.room.update({
-      where: { id },
-      data: {
-        roomTypeId: data.roomTypeId,
-        roomNumber: data.roomNumber
+    try {
+      return await this.prisma.room.update({
+        where: { id },
+        data: {
+          roomTypeId: data.roomTypeId,
+          roomNumber: data.roomNumber
+        }
+      });
+    } catch (error) {
+      if (error.code === 'P2002') {
+        throw new ConflictException('Room number already exists');
       }
-    });
+      if (error.code === 'P2025') {
+        throw new NotFoundException('Room or Room Type not found');
+      }
+      throw error;
+    }
   }
 
   async remove(id: string) {

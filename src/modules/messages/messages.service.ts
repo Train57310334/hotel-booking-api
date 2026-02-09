@@ -5,8 +5,10 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 export class MessagesService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(search?: string) {
+  async findAll(search?: string, hotelId?: string) {
     const where: any = {};
+    if (hotelId) where.hotelId = hotelId;
+    
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
@@ -18,7 +20,8 @@ export class MessagesService {
     // Using any for the missing type until restart
     return (this.prisma as any).message.findMany({
       where,
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      include: { hotel: true }
     });
   }
 

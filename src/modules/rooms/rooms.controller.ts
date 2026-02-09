@@ -10,8 +10,8 @@ export class RoomsController {
   constructor(private readonly roomsService: RoomsService) {}
 
   @Get()
-  findAll(@Query('search') search?: string) {
-    return this.roomsService.findAll(search);
+  findAll(@Query('search') search?: string, @Query('hotelId') hotelId?: string) {
+    return this.roomsService.findAll(search, hotelId);
   }
 
   @Post()

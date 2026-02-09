@@ -12,11 +12,16 @@ export class SearchService {
     minPrice?: number,
     maxPrice?: number,
     guests?: number,
+    adults?: number,
+    children?: number,
     amenities?: string[]
   ) {
+    // Calculate total guests needed (default to guests parameter if adults/children not set, or 1)
+    const totalNeeded = (adults || 0) + (children || 0) || guests || 1;
+
     const where: any = {
       city: {
-        contains: city,
+        contains: city || '', // Allow empty city for single hotel view
         mode: 'insensitive'
       }
     };
@@ -42,17 +47,17 @@ export class SearchService {
                   ]
                 }
               },
-              ...(guests ? { capacity: { gte: guests } } : {})
+              ...(totalNeeded ? { capacity: { gte: totalNeeded } } : {})
             }
           }
         }
       };
-    } else if (guests) {
+    } else if (totalNeeded) {
       where.roomTypes = {
         some: {
           rooms: {
             some: {
-              capacity: { gte: guests }
+              capacity: { gte: totalNeeded }
             }
           }
         }
@@ -99,7 +104,7 @@ export class SearchService {
       return true;
     });
   }
-  async globalSearch(q: string) {
+  async globalSearch(q: string, hotelId?: string) {
     if (!q || q.length < 2) return { users: [], bookings: [], rooms: [], roomTypes: [] };
 
     const [users, bookings, rooms, roomTypes] = await Promise.all([
@@ -111,6 +116,10 @@ export class SearchService {
             { email: { contains: q, mode: 'insensitive' } },
             { phone: { contains: q, mode: 'insensitive' } },
           ],
+          // If hotelId is provided, optionally filter users who have bookings at this hotel?
+          // Or just leave it open as guests might be returning? 
+          // For stricter isolation:
+          ...(hotelId ? { bookings: { some: { hotelId } } } : {})
         },
         take: 5,
       }),
@@ -122,6 +131,7 @@ export class SearchService {
             { id: { contains: q, mode: 'insensitive' } },
             { leadName: { contains: q, mode: 'insensitive' } },
           ],
+          ...(hotelId ? { hotelId } : {})
         },
         take: 5,
         include: { roomType: true },
@@ -131,6 +141,7 @@ export class SearchService {
       this.prisma.room.findMany({
         where: {
           roomNumber: { contains: q, mode: 'insensitive' },
+          ...(hotelId ? { roomType: { hotelId } } : {})
         },
         take: 5,
         include: { roomType: true },
@@ -140,6 +151,7 @@ export class SearchService {
       this.prisma.roomType.findMany({
         where: {
           name: { contains: q, mode: 'insensitive' },
+          ...(hotelId ? { hotelId } : {})
         },
         take: 5,
       }),

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Body, Put, Delete } from '@nestjs/common';
+import { Controller, Get, Param, Post, Body, Put, Delete, Query } from '@nestjs/common';
 import { IsString, IsNumber, IsOptional, IsArray, IsBoolean } from 'class-validator';
 import { ApiTags } from '@nestjs/swagger';
 import { RoomTypesService } from './room-types.service';
@@ -9,7 +9,7 @@ export class RoomTypesController {
   constructor(private svc: RoomTypesService) {}
 
   @Get()
-  findAll() { return this.svc.findAll(); }
+  findAll(@Query('hotelId') hotelId?: string) { return this.svc.findAll(hotelId); }
 
   @Get('by-hotel/:hotelId')
   byHotel(@Param('hotelId') hotelId: string) { return this.svc.listByHotel(hotelId); }

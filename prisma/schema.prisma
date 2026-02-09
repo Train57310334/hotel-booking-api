@@ -104,6 +104,7 @@ model Hotel {
   bookings   Booking[]
   promotions Promotion[]
   expenses   Expense[]
+  messages   Message[]
 
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
@@ -361,6 +362,9 @@ model Message {
   content   String
   status    String   @default("unread") // unread, read, replied
   createdAt DateTime @default(now())
+
+  hotelId   String?
+  hotel     Hotel?   @relation(fields: [hotelId], references: [id])
 }
 
 //

@@ -28,6 +28,7 @@
     "@prisma/client": "^5.19.0",
     "@types/bcrypt": "^6.0.0",
     "@types/cron": "^2.4.3",
+    "archiver": "^7.0.1",
     "argon2": "^0.41.1",
     "bcryptjs": "^3.0.3",
     "class-transformer": "^0.5.1",

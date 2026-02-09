@@ -21,9 +21,13 @@ export class SearchController {
     @Query('minPrice') minPrice?: string,
     @Query('maxPrice') maxPrice?: string,
     @Query('guests') guests?: string,
+    @Query('adults') adults?: string,
+    @Query('children') children?: string,
     @Query('amenities') amenities?: string[]
   ) {
-    if (!city) return { hotels: [] };
+    // If city is empty, we still want to return results for single hotel mode
+    // if (!city) return { hotels: [] }; 
+    
     const hotels = await this.searchService.findHotelsByCity(
       city,
       checkIn,
@@ -31,13 +35,15 @@ export class SearchController {
       minPrice ? Number(minPrice) : undefined,
       maxPrice ? Number(maxPrice) : undefined,
       guests ? Number(guests) : undefined,
+      adults ? Number(adults) : undefined,
+      children ? Number(children) : undefined,
       amenities
     );
     return hotels;
   }
   @Get('global')
-  async globalSearch(@Query('q') q: string) {
-    return this.searchService.globalSearch(q);
+  async globalSearch(@Query('q') q: string, @Query('hotelId') hotelId?: string) {
+    return this.searchService.globalSearch(q, hotelId);
   }
 }
 

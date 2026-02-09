@@ -29,9 +29,10 @@ import { SettingsModule } from '@/modules/settings/settings.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { GuestsModule } from './modules/guests/guests.module';
 import { StaffModule } from './modules/staff/staff.module';
-import { StaffModule } from './modules/staff/staff.module';
+
 import { NightAuditModule } from './modules/night-audit/night-audit.module';
 import { FolioModule } from './modules/folio/folio.module';
+import { DownloadsModule } from './modules/downloads/downloads.module';
 
 @Module({
   imports: [
@@ -62,7 +63,9 @@ import { FolioModule } from './modules/folio/folio.module';
     GuestsModule,
     StaffModule,
     NightAuditModule,
-    FolioModule, // Registered
+    NightAuditModule,
+    FolioModule,
+    DownloadsModule,
   ],
   providers: [PrismaService],
 })

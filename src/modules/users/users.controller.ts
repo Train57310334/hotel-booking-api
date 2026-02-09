@@ -2,6 +2,8 @@ import { Controller, Get, Req, UseGuards, Query, Put, Body, Param } from '@nestj
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -11,8 +13,8 @@ export class UsersController {
 
   @UseGuards(JwtAuthGuard)
   @Get()
-  findAll(@Query('search') search?: string) {
-    return this.svc.findAll(search);
+  findAll(@Query('search') search?: string, @Query('hotelId') hotelId?: string) {
+    return this.svc.findAll(search, hotelId);
   }
   @UseGuards(JwtAuthGuard)
   @Get('me')
@@ -23,7 +25,13 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   @Put('me')
   async updateMe(@Req() req: any, @Body() body: any) {
-    return this.svc.update(req.user.userId, body);
+    // Whitelist allowed fields for self-update
+    const allowed = ['name', 'phone', 'avatarUrl'];
+    const updates = {};
+    for (const key of allowed) {
+        if (body[key] !== undefined) updates[key] = body[key];
+    }
+    return this.svc.update(req.user.userId, updates);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -33,13 +41,15 @@ export class UsersController {
   }
 
   // Admin Endpoints
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'owner')
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.svc.findOne(id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'owner')
   @Put(':id')
   async update(@Param('id') id: string, @Body() body: any) {
     return this.svc.update(id, body);

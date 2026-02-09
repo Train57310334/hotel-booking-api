@@ -13,8 +13,10 @@ import { Roles } from '../auth/decorators/roles.decorator';
 export class ReportsController {
   constructor(private svc: ReportsService) {}
 
-  private async getHotelId(req: any) {
+  private async getHotelId(req: any, queryHotelId?: string) {
+      if (queryHotelId) return queryHotelId;
       if (req.user.hotelId) return req.user.hotelId;
+      
       // Fallback for platform admins
       const defaultId = await this.svc.getDefaultHotelId();
       if (!defaultId) throw new Error('No hotel configured in system');
@@ -22,32 +24,32 @@ export class ReportsController {
   }
 
   @Get('revenue')
-  async revenue(@Req() req: any, @Query('from') from: string, @Query('to') to: string) {
-    const hotelId = await this.getHotelId(req);
-    return this.svc.getRevenue(hotelId, new Date(from), new Date(to));
+  async revenue(@Req() req: any, @Query('from') from: string, @Query('to') to: string, @Query('hotelId') hotelId?: string) {
+    const hId = await this.getHotelId(req, hotelId);
+    return this.svc.getRevenue(hId, new Date(from), new Date(to));
   }
 
   @Get('expenses')
-  async expenses(@Req() req: any, @Query('from') from: string, @Query('to') to: string) {
-    const hotelId = await this.getHotelId(req);
-    return this.svc.getExpenses(hotelId, new Date(from), new Date(to));
+  async expenses(@Req() req: any, @Query('from') from: string, @Query('to') to: string, @Query('hotelId') hotelId?: string) {
+    const hId = await this.getHotelId(req, hotelId);
+    return this.svc.getExpenses(hId, new Date(from), new Date(to));
   }
 
   @Get('occupancy')
-  async occupancy(@Req() req: any, @Query('from') from: string, @Query('to') to: string) {
-    const hotelId = await this.getHotelId(req);
-    return this.svc.getOccupancy(hotelId, new Date(from), new Date(to));
+  async occupancy(@Req() req: any, @Query('from') from: string, @Query('to') to: string, @Query('hotelId') hotelId?: string) {
+    const hId = await this.getHotelId(req, hotelId);
+    return this.svc.getOccupancy(hId, new Date(from), new Date(to));
   }
 
   @Get('sources')
-  async sources(@Req() req: any, @Query('from') from: string, @Query('to') to: string) {
-    const hotelId = await this.getHotelId(req);
-    return this.svc.getBookingSources(hotelId, new Date(from), new Date(to));
+  async sources(@Req() req: any, @Query('from') from: string, @Query('to') to: string, @Query('hotelId') hotelId?: string) {
+    const hId = await this.getHotelId(req, hotelId);
+    return this.svc.getBookingSources(hId, new Date(from), new Date(to));
   }
   
   @Get('summary')
-  async summary(@Req() req: any, @Query('from') from: string, @Query('to') to: string) {
-    const hotelId = await this.getHotelId(req);
+  async summary(@Req() req: any, @Query('from') from: string, @Query('to') to: string, @Query('hotelId') hotelId?: string) {
+    const hId = await this.getHotelId(req, hotelId);
     return this.svc.getSummary(hotelId, new Date(from), new Date(to));
   }
 
