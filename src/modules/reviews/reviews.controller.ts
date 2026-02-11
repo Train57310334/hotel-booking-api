@@ -25,20 +25,20 @@ export class ReviewsController {
     });
   }
 
-  // Admin: List All
+  // Admin: List All (Filtered by Hotel)
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Get('admin/all')
-  findAll(@Query('status') status?: string) {
-    return this.svc.findAll(status);
+  findAll(@Query('status') status?: string, @Query('hotelId') hotelId?: string) {
+    return this.svc.findAll(status, hotelId);
   }
 
-  // Admin: Stats
+  // Admin: Stats (Filtered by Hotel)
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Get('admin/stats')
-  getStats() {
-    return this.svc.getStats();
+  getStats(@Query('hotelId') hotelId?: string) {
+    return this.svc.getStats(hotelId);
   }
 
   // Admin: Moderate

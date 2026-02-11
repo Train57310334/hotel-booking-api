@@ -16,7 +16,7 @@ export class AuthController {
 
   /** 🏨 ลงทะเบียนพาร์ทเนอร์ (เจ้าของโรงแรม) */
   @Post('register-partner')
-  async registerPartner(@Body() body: { hotelName: string; email: string; password: string; name: string; phone?: string }) {
+  async registerPartner(@Body() body: { hotelName: string; email: string; password: string; name: string; phone?: string; package?: string }) {
     return this.authService.registerPartner(body);
   }
 

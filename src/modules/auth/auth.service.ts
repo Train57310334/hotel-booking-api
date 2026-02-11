@@ -34,7 +34,8 @@ export class AuthService {
     email: string; 
     password: string; 
     name: string; 
-    phone?: string 
+    phone?: string;
+    package?: string; 
   }) {
     const existing = await this.prisma.user.findUnique({ where: { email: data.email } });
     if (existing) throw new ConflictException('Email already registered');
@@ -58,7 +59,8 @@ export class AuthService {
         const hotel = await tx.hotel.create({
             data: {
                 name: data.hotelName,
-                ownerId: user.id
+                ownerId: user.id,
+                package: data.package || 'LITE'
             }
         });
 
