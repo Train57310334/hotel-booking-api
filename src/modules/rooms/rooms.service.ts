@@ -45,6 +45,28 @@ export class RoomsService {
   async create(data: any) {
     // data.roomTypeId is required
     try {
+      // 1. Check Package Limits
+      const roomType = await this.prisma.roomType.findUnique({
+        where: { id: data.roomTypeId },
+        include: { hotel: true }
+      });
+
+      if (!roomType) throw new NotFoundException('Room Type not found');
+
+      // Count all rooms for this hotel (across all types)
+      const currentRoomCount = await this.prisma.room.count({
+        where: {
+            roomType: { hotelId: roomType.hotelId },
+            deletedAt: null
+        }
+      });
+
+      const pkg = roomType.hotel.package; // LITE, PRO, ENTERPRISE
+      
+      if (pkg === 'LITE' && currentRoomCount >= 5) {
+          throw new ConflictException('LITE Plan is limited to 5 rooms. Please upgrade to PRO for unlimited rooms.');
+      }
+
       return await this.prisma.room.create({
         data: {
           roomTypeId: data.roomTypeId,
@@ -61,6 +83,28 @@ export class RoomsService {
 
   async createBulk(data: { roomTypeId: string; prefix?: string; startNumber: number; count: number }) {
     const { roomTypeId, prefix = '', startNumber, count } = data;
+
+    // 1. Check Package Limits
+    const roomType = await this.prisma.roomType.findUnique({
+        where: { id: roomTypeId },
+        include: { hotel: true }
+    });
+
+    if (!roomType) throw new NotFoundException('Room Type not found');
+
+    const currentRoomCount = await this.prisma.room.count({
+        where: {
+            roomType: { hotelId: roomType.hotelId },
+            deletedAt: null
+        }
+    });
+
+    const pkg = roomType.hotel.package;
+
+    if (pkg === 'LITE' && (currentRoomCount + count) > 5) {
+        throw new ConflictException(`LITE Plan is limited to 5 rooms. You have ${currentRoomCount} rooms and are trying to add ${count} more.`);
+    }
+
     const roomsToCreate = [];
     
     for (let i = 0; i < count; i++) {
@@ -100,7 +144,7 @@ export class RoomsService {
         throw new ConflictException('Room number already exists');
       }
       if (error.code === 'P2025') {
-        throw new NotFoundException('Room or Room Type not found');
+        throw new NotFoundException(`Room with ID ${id} not found or Room Type ${data.roomTypeId} invalid.`);
       }
       throw error;
     }

@@ -70,6 +70,7 @@ model RoleAssignment {
 
 model Hotel {
   id          String   @id @default(cuid())
+  package     String   @default("LITE") // LITE, PRO, ENTERPRISE
   name        String
   description String?
   address     String?

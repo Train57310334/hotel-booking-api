@@ -14,10 +14,13 @@ export class ReviewsService {
     });
   }
 
-  async findAll(status?: string) {
+  async findAll(status?: string, hotelId?: string) {
     const where: any = {};
     if (status && status !== 'All') {
       where.status = status.toLowerCase();
+    }
+    if (hotelId) {
+      where.hotelId = hotelId;
     }
 
     return this.prisma.review.findMany({
@@ -56,13 +59,16 @@ export class ReviewsService {
     });
   }
 
-  async getStats() {
-    const total = await this.prisma.review.count();
-    const pending = await this.prisma.review.count({ where: { status: 'pending' } });
-    const approved = await this.prisma.review.count({ where: { status: 'approved' } });
+  async getStats(hotelId?: string) {
+    const where: any = {};
+    if (hotelId) where.hotelId = hotelId;
+
+    const total = await this.prisma.review.count({ where });
+    const pending = await this.prisma.review.count({ where: { ...where, status: 'pending' } });
+    const approved = await this.prisma.review.count({ where: { ...where, status: 'approved' } });
     const avg = await this.prisma.review.aggregate({
         _avg: { rating: true },
-        where: { status: 'approved' }
+        where: { ...where, status: 'approved' }
     });
 
     return { total, pending, approved, averageRating: avg._avg.rating || 0 };
