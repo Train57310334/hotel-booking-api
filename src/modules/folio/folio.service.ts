@@ -19,42 +19,43 @@ export class FolioService {
 
     const totalRoom = booking.totalAmount || 0;
     
-    // Sum charges
-    const totalCharges = booking.folioCharges.reduce((sum, c) => sum + c.amount, 0);
+    // Separate charges (positive) and credits (negative/payments)
+    const charges = booking.folioCharges.filter(c => c.amount >= 0);
+    const credits = booking.folioCharges.filter(c => c.amount < 0);
 
-    // Sum payments 
-    // If Payment model is 1:1 as per schema lines 301-311 (bookingId @unique), then it's a single object
-    const totalPaid = (booking.payment?.status === 'captured') ? booking.payment.amount : 0;
-    // NOTE: If you support multiple partial payments later, you'll need to change Payment relation to 1:N.
-    // For now, let's assume single payment or multiple payments handled via external logic?
-    // User requested "Pay Balance", which implies multiple payments might be needed.
-    // BUT Schema has `model Payment { bookingId @unique }`.
-    // LIMITATION: Current schema only supports ONE payment record per booking.
-    // WORKAROUND for Option B: 
-    // If they pay balance, we might need to update the existing Payment record amount? Or create a new one?
-    // Converting Payment to 1:N is a big change. 
-    // Let's assume for MVP: Folio tracks "Extra Charges", and Payment tracks "Main Payment".
-    // If they need to pay EXTRA, maybe we just create another Stripe Intent and... wait, where do we store it?
-    // We should probably allow 1:N payments to proper cashiering.
-    // Let's check Schema line 303: `bookingId String @unique`.
-    
-    // DECISION: For this task, I will stick to adding CHARGES. 
-    // If "Pay Balance" is required, I might need to allow multiple payments.
-    // Let's modify schema to 1:N for Payment? 
-    // User asked for "Folio", typically implies multiple transactions.
-    // I will proceed with Folio Service first. 
+    // Sum positive charges
+    const totalCharges = charges.reduce((sum, c) => sum + c.amount, 0);
+
+    // Sum payments (Stripe + Manual Credits)
+    const stripePayment = (booking.payment?.status === 'captured') ? booking.payment.amount : 0;
+    const manualPayments = credits.reduce((sum, c) => sum + Math.abs(c.amount), 0);
+    const totalPaid = stripePayment + manualPayments;
 
     const balance = (totalRoom + totalCharges) - totalPaid;
+
+    // Combine Stripe Payment and Manual Credits for "Transactions" list
+    const transactions = [
+        ...(booking.payment ? [booking.payment] : []),
+        ...credits.map(c => ({
+            id: c.id,
+            date: c.date,
+            amount: Math.abs(c.amount), // Show as positive in transactions list
+            method: c.description.includes('Cash') ? 'cash' : 'transfer', // Simple heuristic
+            status: 'captured',
+            isManual: true, // Flag for frontend
+            description: c.description
+        }))
+    ].sort((a: any, b: any) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime());
 
     return {
       bookingId,
       currency: 'THB',
       roomTotal: totalRoom,
-      totalCharges,
-      totalPaid,
+      totalCharges, // Only positive extra charges
+      totalPaid,    // Stripe + Credits
       balance,
-      charges: booking.folioCharges,
-      transactions: booking.payment ? [booking.payment] : []
+      charges,      // Only positive charges
+      transactions  // Unified list of payments
     };
   }
 

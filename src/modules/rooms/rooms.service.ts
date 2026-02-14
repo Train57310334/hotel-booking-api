@@ -28,10 +28,10 @@ export class RoomsService {
         bookings: {
            where: {
                status: { in: ['confirmed', 'checked_in'] },
-               checkIn: { lte: new Date() },
-               checkOut: { gt: new Date() }
+               checkOut: { gte: new Date(new Date().setHours(0, 0, 0, 0)) }
            },
-           take: 1
+           orderBy: { checkIn: 'asc' },
+           take: 5
         },
         statusLogs: {
             orderBy: { createdAt: 'desc' },

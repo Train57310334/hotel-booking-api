@@ -94,6 +94,9 @@ model Hotel {
   bankName          String?
   bankAccountName   String?
   bankAccountNumber String?
+  
+  // Subscription
+  subscriptionEnd   DateTime?
 
   // RBAC: owner of this hotel
   ownerId String?
