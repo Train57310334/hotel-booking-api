@@ -13,14 +13,58 @@ export class PaymentsService {
   ) {}
 
   async findAll(search?: string, status?: string) {
-    return this.prisma.payment.findMany({
+    // 1. Fetch Online Payments
+    const payments = await this.prisma.payment.findMany({
       where: {
-        status: status || undefined,
+        status: status && status !== 'manual' ? status : undefined,
         booking: search ? { leadName: { contains: search, mode: 'insensitive' } } : undefined
       },
       include: { booking: true },
-      orderBy: { id: 'desc' }
     });
+
+    // 2. Fetch Manual Payments (FolioCharges) if status is not 'pending'/'failed' (since manual is always captured)
+    let manualPayments = [];
+    if (!status || status === 'manual' || status === 'captured') {
+        manualPayments = await this.prisma.folioCharge.findMany({
+            where: {
+                type: 'PAYMENT',
+                booking: search ? { leadName: { contains: search, mode: 'insensitive' } } : undefined
+            },
+            include: { booking: true }
+        });
+    }
+
+    // 3. Normalize & Merge
+    const normalizedOnline = payments.map(p => ({
+        id: p.id,
+        bookingId: p.bookingId,
+        amount: (p.status === 'created' || p.status === 'pending') ? p.amount / 100 : p.amount, // Fix inconsistent unit storage
+        provider: p.provider,
+        method: p.method || p.provider,
+        status: p.status === 'created' ? 'pending' : p.status,
+        date: p.createdAt,
+        reference: p.chargeId || p.intentId,
+        booking: p.booking,
+        isManual: false
+    }));
+
+    const normalizedManual = manualPayments.map(p => ({
+        id: p.id,
+        bookingId: p.bookingId,
+        amount: Math.abs(p.amount),
+        provider: 'manual',
+        method: p.description.includes('CASH') ? 'Cash' : 'Bank Transfer',
+        status: 'captured',
+        date: p.createdAt,
+        reference: p.description, // Contains full description including Ref
+        booking: p.booking,
+        isManual: true
+    }));
+
+    const all = [...normalizedOnline, ...normalizedManual];
+    
+    // Sort by Date Descending
+    return all.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }
 
   async createPaymentIntent(amount: number, currency = 'thb', description?: string, bookingId?: string) {
@@ -102,6 +146,29 @@ export class PaymentsService {
     });
   }
 
+  async createUpgradeIntent(hotelId: string) {
+    const { secretKey } = await this.settingsService.getStripeConfig();
+    const stripe = new Stripe(secretKey, { apiVersion: '2024-06-20' as any });
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: 99000, // 990.00 THB
+      currency: 'thb',
+      description: 'Upgrade to PRO Plan (1 Month)',
+      metadata: { 
+          type: 'upgrade',
+          hotelId 
+      },
+      automatic_payment_methods: {
+        enabled: true,
+      },
+    });
+
+    return {
+      clientSecret: paymentIntent.client_secret,
+      id: paymentIntent.id
+    };
+  }
+
   async handleWebhook(signature: string, payload: Buffer) {
     const { secretKey } = await this.settingsService.getStripeConfig();
     const stripe = new Stripe(secretKey, { apiVersion: '2024-06-20' as any });
@@ -115,10 +182,13 @@ export class PaymentsService {
 
     if (event.type === 'payment_intent.succeeded') {
         const paymentIntent = event.data.object;
-        const bookingId = paymentIntent.metadata.bookingId;
-        console.log(`💰 Payment Succeeded for Booking: ${bookingId}`);
+        const metadata = paymentIntent.metadata;
 
-        if (bookingId) {
+        console.log(`💰 Payment Succeeded: ${paymentIntent.id}`, metadata);
+
+        // CASE 1: Booking Payment
+        if (metadata.bookingId) {
+            const bookingId = metadata.bookingId;
             // 1. Update Booking Status
             const updatedBooking = await this.prisma.booking.update({
                 where: { id: bookingId },
@@ -126,7 +196,7 @@ export class PaymentsService {
                 include: { 
                     hotel: true, 
                     roomType: true, 
-                    guests: true, // Fixed typo
+                    guests: true,
                     payment: true
                 }
             });
@@ -156,8 +226,46 @@ export class PaymentsService {
                 console.error('Failed to send payment success email', emailErr);
             }
         }
+
+        // CASE 2: Subscription Upgrade
+        if (metadata.type === 'upgrade' && metadata.hotelId) {
+            const hotelId = metadata.hotelId;
+            const daysToAdd = 30;
+            const newExpiry = new Date();
+            newExpiry.setDate(newExpiry.getDate() + daysToAdd);
+
+            await this.prisma.hotel.update({
+                where: { id: hotelId },
+                data: {
+                    package: 'PRO',
+                    subscriptionEnd: newExpiry
+                }
+            });
+
+            console.log(`🚀 Hotel ${hotelId} upgraded to PRO until ${newExpiry.toISOString()}`);
+        }
     }
 
     return { received: true };
+  }
+  async createManualPayment(bookingId: string, amount: number, method: 'CASH' | 'BANK_TRANSFER', reference?: string) {
+    if (amount <= 0) throw new BadRequestException('Amount must be positive');
+
+    const payment = await this.prisma.folioCharge.create({
+      data: {
+        bookingId,
+        amount: -amount, // Negative for credit/payment
+        description: `Payment via ${method}${reference ? ` (Ref: ${reference})` : ''}`,
+        type: 'PAYMENT'
+      }
+    });
+
+    // Auto-confirm booking if it's pending
+    await this.prisma.booking.update({
+        where: { id: bookingId, status: 'pending' },
+        data: { status: 'confirmed' }
+    }).catch(() => {}); // Ignore if not found or already confirmed
+
+    return payment;
   }
 }

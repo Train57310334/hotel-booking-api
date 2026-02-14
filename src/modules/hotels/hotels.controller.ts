@@ -5,14 +5,26 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { ApiTags } from '@nestjs/swagger';
 import { HotelsService } from './hotels.service';
 
+import { PaymentsService } from '../payments/payments.service';
+
 @ApiTags('hotels')
 @Controller('hotels')
 export class HotelsController {
-  constructor(private hotels: HotelsService) {}
+  constructor(
+    private hotels: HotelsService,
+    private paymentsService: PaymentsService 
+  ) {}
+
+  @Post(':id/upgrade')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'hotel_admin')
+  upgrade(@Param('id') id: string) {
+    return this.paymentsService.createUpgradeIntent(id);
+  }
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('platform_admin', 'hotel_admin', 'owner') // Only owners can create hotels? or Platform Admin
+  @Roles('platform_admin', 'hotel_admin', 'owner')
   create(@Req() req, @Body() body: any) {
     return this.hotels.create(req.user.userId, body);
   }

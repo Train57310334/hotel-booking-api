@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '@/common/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { InventoryService } from '@/modules/inventory/inventory.service';
@@ -36,7 +36,7 @@ export class BookingsService {
           });
 
           if (roomConflict) {
-              throw new NotFoundException(`Selected Room is already booked for these dates.`);
+              throw new ConflictException(`Selected Room is already booked for these dates.`);
           }
       }
 

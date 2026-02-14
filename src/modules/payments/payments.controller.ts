@@ -56,4 +56,12 @@ export class PaymentsController {
     // For now, passing JSON string buffer to mimic raw body if needed, or just pass payload
     return this.svc.handleWebhook(signature, Buffer.from(JSON.stringify(payload)));
   }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post('manual')
+  async manualPayment(@Body() body: { bookingId: string; amount: number; method: 'CASH' | 'BANK_TRANSFER'; reference?: string }) {
+    if (!body.bookingId || !body.amount || !body.method) throw new Error('Missing required fields');
+    return this.svc.createManualPayment(body.bookingId, body.amount, body.method, body.reference);
+  }
 }
