@@ -46,7 +46,11 @@ export class SettingsService {
       stripePublicKey: settings['stripeKey'] || process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '',
       omisePublicKey: settings['omisePublicKey'] || process.env.NEXT_PUBLIC_OMISE_PUBLIC_KEY || '',
       siteName: settings['siteName'] || 'BookingKub',
-      logoUrl: settings['logoUrl'] || ''
+      logoUrl: settings['logoUrl'] || '',
+      // SaaS Landing Content
+      landingHeroTitle: settings['landingHeroTitle'] || '',
+      landingHeroDescription: settings['landingHeroDescription'] || '',
+      landingCTA: settings['landingCTA'] || ''
     };
   }
 
