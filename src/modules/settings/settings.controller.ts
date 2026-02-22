@@ -9,7 +9,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 @ApiBearerAuth()
 @Controller('settings')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('owner', 'admin')
+@Roles('platform_admin')
 export class SettingsController {
   constructor(private svc: SettingsService) {}
 

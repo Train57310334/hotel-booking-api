@@ -1,9 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class MessagesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService
+  ) {}
 
   async findAll(search?: string, hotelId?: string) {
     const where: any = {};
@@ -32,7 +36,16 @@ export class MessagesService {
   }
 
   async create(data: any) {
-    return (this.prisma as any).message.create({ data });
+    const msg = await (this.prisma as any).message.create({ data });
+    
+    // Notify Super Admins
+    await this.notificationsService.createNotification(
+      'New Support Inquiry',
+      `You received a new message from ${data.name} regarding "${data.subject || 'General Inquiry'}".`,
+      'info'
+    );
+    
+    return msg;
   }
 
   async markAsRead(id: string) {

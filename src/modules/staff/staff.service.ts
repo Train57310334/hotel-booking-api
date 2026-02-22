@@ -25,6 +25,22 @@ export class StaffService {
   }
 
   async create(hotelId: string, data: any) {
+      // 0. Check Max Staff Limit
+      const hotel = await this.prisma.hotel.findUnique({
+          where: { id: hotelId },
+          select: { maxStaff: true, _count: { select: { RoleAssignment: true } } }
+      });
+
+      if (!hotel) {
+          throw new NotFoundException('Hotel not found');
+      }
+
+      const currentStaffCount = hotel._count?.RoleAssignment || 0;
+
+      if (currentStaffCount >= hotel.maxStaff) {
+          throw new BadRequestException(`Your plan is limited to ${hotel.maxStaff} staff member(s). Please upgrade your plan to add more staff.`);
+      }
+
       // 1. Check if user exists by email
       let user = await this.prisma.user.findUnique({ where: { email: data.email } });
 
@@ -50,6 +66,10 @@ export class StaffService {
           throw new BadRequestException('User is already staff at this hotel.');
       }
 
+      if (data.role === 'owner') {
+          throw new BadRequestException('Cannot assign owner role via this endpoint.');
+      }
+
       // 3. Assign Role
       await this.prisma.roleAssignment.create({
           data: {
@@ -68,6 +88,8 @@ export class StaffService {
       });
 
       if (!assignment) throw new NotFoundException('Staff not found');
+      if (assignment.role === 'owner') throw new BadRequestException('Cannot modify the role of the hotel owner.');
+      if (role === 'owner') throw new BadRequestException('Cannot assign the owner role.');
 
       return this.prisma.roleAssignment.update({
           where: { id: assignment.id },
@@ -81,8 +103,7 @@ export class StaffService {
       });
 
       if (!assignment) throw new NotFoundException('Staff not found');
-
-      // Check if trying to remove the LAST owner? (Optional safety)
+      if (assignment.role === 'owner') throw new BadRequestException('Cannot remove the hotel owner.');
       
       return this.prisma.roleAssignment.delete({
           where: { id: assignment.id }

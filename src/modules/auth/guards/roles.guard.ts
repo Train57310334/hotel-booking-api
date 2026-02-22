@@ -1,12 +1,16 @@
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles.decorator';
+import { PrismaService } from '../../../common/prisma/prisma.service';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(
+      private reflector: Reflector,
+      private prisma: PrismaService
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiredRoles = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -40,6 +44,12 @@ export class RolesGuard implements CanActivate {
              throw new ForbiddenException('Access denied for this hotel');
         }
         
+        // --- SUSPENSION CHECK ---
+        const hotel = await this.prisma.hotel.findUnique({ where: { id: hotelId }, select: { isSuspended: true } });
+        if (hotel?.isSuspended && !user.roles?.includes('platform_admin')) {
+             throw new ForbiddenException('This property has been suspended by the platform administrator.');
+        }
+
         // Check if the assigned role is sufficient
         // Hierarchy: owner > admin > manager > reception
         // But for simplicity, let's just use exact string matching or inclusion

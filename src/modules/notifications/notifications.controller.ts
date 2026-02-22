@@ -1,7 +1,9 @@
-import { Controller, Get, Put, Param, UseGuards, Body } from '@nestjs/common';
+import { Controller, Get, Put, Param, UseGuards, Body, Request } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+
+import { Request as ExpressRequest } from 'express';
 
 @Controller('notifications')
 @UseGuards(JwtAuthGuard)
@@ -12,11 +14,18 @@ export class NotificationsController {
   ) {}
 
   @Get()
-  async getNotifications() {
+  async getNotifications(@Request() req: ExpressRequest & { user: any }) {
+    const user = req.user;
+    const isSuperAdmin = user.roles && user.roles.includes('platform_admin');
+
     const data = await this.prisma.notification.findMany({
+      where: isSuperAdmin 
+        ? { OR: [{ userId: null }, { userId: user.id }] } 
+        : { userId: user.id },
       orderBy: { createdAt: 'desc' },
       take: 20
     });
+
     return data.map(n => ({
         ...n,
         time: this.timeAgo(n.createdAt)
@@ -53,9 +62,14 @@ export class NotificationsController {
   }
 
   @Put('read-all')
-  async markAllAsRead() {
+  async markAllAsRead(@Request() req: ExpressRequest & { user: any }) {
+    const user = req.user;
+    const isSuperAdmin = user.roles && user.roles.includes('platform_admin');
+
     return this.prisma.notification.updateMany({
-      where: { isRead: false },
+      where: isSuperAdmin 
+        ? { isRead: false, OR: [{ userId: null }, { userId: user.id }] } 
+        : { isRead: false, userId: user.id },
       data: { isRead: true }
     });
   }

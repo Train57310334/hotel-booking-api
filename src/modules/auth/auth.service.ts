@@ -55,12 +55,30 @@ export class AuthService {
             }
         });
 
+        const pkg = data.package || 'LITE';
+        const plan = await tx.subscriptionPlan.findUnique({ where: { id: pkg } });
+        
+        const limits = plan ? {
+          maxRooms: plan.maxRooms,
+          maxRoomTypes: plan.maxRoomTypes,
+          maxStaff: plan.maxStaff,
+          hasPromotions: plan.hasPromotions,
+          hasOnlinePayment: plan.hasOnlinePayment,
+        } : {
+          maxRooms: 5,
+          maxRoomTypes: 2,
+          maxStaff: 1,
+          hasPromotions: false,
+          hasOnlinePayment: false,
+        };
+
         // 2. Create Hotel
         const hotel = await tx.hotel.create({
             data: {
                 name: data.hotelName,
                 ownerId: user.id,
-                package: data.package || 'LITE'
+                package: pkg,
+                ...limits
             }
         });
 
@@ -120,12 +138,38 @@ export class AuthService {
     });
   }
 
+  // ✅ Impersonate (For Super Admins)
+  async impersonate(targetHotelId: string) {
+    // 1. Find the owner of this hotel
+    const hotel = await this.prisma.hotel.findUnique({
+        where: { id: targetHotelId },
+        include: { owner: true }
+    });
+
+    if (!hotel || !hotel.owner) {
+        throw new UnauthorizedException('Target hotel or owner not found');
+    }
+
+    const targetUser = await this.prisma.user.findUnique({
+        where: { id: hotel.owner.id },
+        include: { roleAssignments: true }
+    });
+
+    if (!targetUser) {
+        throw new UnauthorizedException('Target user not found');
+    }
+
+    // 2. Generate a token AS IF they just logged in
+    const token = this.generateToken(targetUser, targetHotelId);
+    return { user: targetUser, token, isImpersonating: true };
+  }
+
   // ✅ Helper: JWT Token
-  private generateToken(user: any) {
-    // Find first hotelId from assignments if available
-    const hotelId = user.roleAssignments && user.roleAssignments.length > 0 
+  private generateToken(user: any, forceHotelId?: string) {
+    // Find first hotelId from assignments if available, unless forced
+    const hotelId = forceHotelId || (user.roleAssignments && user.roleAssignments.length > 0 
         ? user.roleAssignments[0].hotelId 
-        : null;
+        : null);
 
     const payload = { 
         sub: user.id, 

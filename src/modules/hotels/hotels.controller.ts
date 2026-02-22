@@ -22,6 +22,27 @@ export class HotelsController {
     return this.paymentsService.createUpgradeIntent(id);
   }
 
+  @Get('super/all')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('platform_admin')
+  listForSuperAdmin() {
+    return this.hotels.listForSuperAdmin();
+  }
+
+  @Get('super/stats')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('platform_admin')
+  getSuperStats() {
+    return this.hotels.getSuperStats();
+  }
+
+  @Put('super/:id/suspend')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('platform_admin')
+  suspendHotel(@Param('id') id: string, @Body('isSuspended') isSuspended: boolean) {
+    return this.hotels.suspendHotel(id, isSuspended);
+  }
+
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('platform_admin', 'hotel_admin', 'owner')

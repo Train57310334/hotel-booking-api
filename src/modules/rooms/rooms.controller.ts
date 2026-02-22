@@ -14,6 +14,15 @@ export class RoomsController {
     return this.roomsService.findAll(search, hotelId);
   }
 
+  @Get('available')
+  getAvailable(
+      @Query('roomTypeId') roomTypeId: string,
+      @Query('checkIn') checkIn: string,
+      @Query('checkOut') checkOut: string
+  ) {
+      return this.roomsService.getAvailableRooms(roomTypeId, checkIn, checkOut);
+  }
+
   @Post()
   create(@Body() createRoomDto: any) {
     return this.roomsService.create(createRoomDto);
