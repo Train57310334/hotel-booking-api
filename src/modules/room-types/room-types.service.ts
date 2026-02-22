@@ -32,13 +32,41 @@ export class RoomTypesService {
 
   async create(data: any) {
     try {
+      // 1. Check maxRoomTypes Limit
+      if (data.hotelId) {
+        const hotel = await this.prisma.hotel.findUnique({
+          where: { id: data.hotelId },
+          select: { maxRoomTypes: true }
+        });
+        
+        if (hotel) {
+          const currentCount = await this.prisma.roomType.count({
+            where: { hotelId: data.hotelId, deletedAt: null }
+          });
+          
+          if (currentCount >= hotel.maxRoomTypes) {
+            throw new BadRequestException(`Your plan is limited to ${hotel.maxRoomTypes} room types. Please upgrade.`);
+          }
+        }
+      }
+
       const { price, ...rest } = data;
       const basePrice = price !== undefined ? Number(price) : rest.basePrice;
+      
+      const parsedBasePrice = basePrice !== undefined ? Number(basePrice) : undefined;
       
       return await this.prisma.roomType.create({
         data: {
           ...rest,
-          basePrice: basePrice !== undefined ? Number(basePrice) : undefined,
+          basePrice: parsedBasePrice,
+          ratePlans: {
+            create: {
+              hotelId: rest.hotelId,
+              name: 'Standard Rate',
+              cancellationRule: 'Free cancellation up to 24h',
+              includesBreakfast: false
+            }
+          }
         },
       });
     } catch (e) {

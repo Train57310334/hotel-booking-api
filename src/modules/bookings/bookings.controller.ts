@@ -110,6 +110,29 @@ export class BookingsController {
   }
 
   /**
+   * 🛒 สร้างการจองผ่าน Public Booking Engine
+   */
+  @Post('public')
+  async createPublic(@Body() data: any) {
+    try {
+      return await this.svc.createPublicBooking(data);
+    } catch (e) {
+      console.error('Error in BookingsController.createPublic:', e);
+      throw e;
+    }
+  }
+
+  /**
+   * 🌐 Platform Admin: Get all bookings across all hotels
+   */
+  @Get('super')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('platform_admin')
+  async getSuperBookings(@Query() query: any) {
+    return this.svc.getAllPlatformBookings(query);
+  }
+
+  /**
    * 📋 ดึงข้อมูลการจองตาม ID
    */
   /**
@@ -259,5 +282,15 @@ export class BookingsController {
   @Post(':id/request-feedback')
   async requestFeedback(@Param('id') id: string) {
     return this.svc.requestFeedback(id);
+  }
+
+  /**
+   * 📄 ดึงใบเสร็จรับเงิน (Invoice)
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get(':id/invoice')
+  async getInvoice(@Req() req, @Param('id') id: string) {
+      // In a real app, verify the req.user has access to this booking (owner or guest)
+      return this.svc.generateInvoice(id);
   }
 }

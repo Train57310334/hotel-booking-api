@@ -105,58 +105,79 @@ export class SearchService {
     });
   }
   async globalSearch(q: string, hotelId?: string) {
-    if (!q || q.length < 2) return { users: [], bookings: [], rooms: [], roomTypes: [] };
+    if (!q || q.length < 2) return { users: [], bookings: [], rooms: [], roomTypes: [], hotels: [], packages: [] };
 
-    const [users, bookings, rooms, roomTypes] = await Promise.all([
-      // 1. Search Users
-      this.prisma.user.findMany({
-        where: {
-          OR: [
-            { name: { contains: q, mode: 'insensitive' } },
-            { email: { contains: q, mode: 'insensitive' } },
-            { phone: { contains: q, mode: 'insensitive' } },
-          ],
-          // If hotelId is provided, optionally filter users who have bookings at this hotel?
-          // Or just leave it open as guests might be returning? 
-          // For stricter isolation:
-          ...(hotelId ? { bookings: { some: { hotelId } } } : {})
-        },
-        take: 5,
-      }),
+    // Common search promises
+    const usersPromise = this.prisma.user.findMany({
+      where: {
+        OR: [
+          { name: { contains: q, mode: 'insensitive' } },
+          { email: { contains: q, mode: 'insensitive' } },
+          { phone: { contains: q, mode: 'insensitive' } },
+        ],
+        ...(hotelId ? { bookings: { some: { hotelId } } } : {})
+      },
+      take: 5,
+    });
 
-      // 2. Search Bookings
-      this.prisma.booking.findMany({
-        where: {
-          OR: [
-            { id: { contains: q, mode: 'insensitive' } },
-            { leadName: { contains: q, mode: 'insensitive' } },
-          ],
-          ...(hotelId ? { hotelId } : {})
-        },
-        take: 5,
-        include: { roomType: true },
-      }),
+    const bookingsPromise = this.prisma.booking.findMany({
+      where: {
+        OR: [
+          { id: { contains: q, mode: 'insensitive' } },
+          { leadName: { contains: q, mode: 'insensitive' } },
+        ],
+        ...(hotelId ? { hotelId } : {})
+      },
+      take: 5,
+      include: { roomType: true },
+    });
 
-      // 3. Search Rooms
-      this.prisma.room.findMany({
-        where: {
-          roomNumber: { contains: q, mode: 'insensitive' },
-          ...(hotelId ? { roomType: { hotelId } } : {})
-        },
-        take: 5,
-        include: { roomType: true },
-      }),
-
-      // 4. Search Room Types
-      this.prisma.roomType.findMany({
-        where: {
-          name: { contains: q, mode: 'insensitive' },
-          ...(hotelId ? { hotelId } : {})
-        },
-        take: 5,
-      }),
-    ]);
-
-    return { users, bookings, rooms, roomTypes };
+    if (hotelId) {
+        // Normal Admin: Search Rooms and RoomTypes
+        const [users, bookings, rooms, roomTypes] = await Promise.all([
+            usersPromise,
+            bookingsPromise,
+            this.prisma.room.findMany({
+              where: {
+                roomNumber: { contains: q, mode: 'insensitive' },
+                ...(hotelId ? { roomType: { hotelId } } : {})
+              },
+              take: 5,
+              include: { roomType: true },
+            }),
+            this.prisma.roomType.findMany({
+              where: {
+                name: { contains: q, mode: 'insensitive' },
+                ...(hotelId ? { hotelId } : {})
+              },
+              take: 5,
+            })
+        ]);
+        return { users, bookings, rooms, roomTypes, hotels: [], packages: [] };
+    } else {
+        // Super Admin: Search Hotels and SubscriptionPlans (exclude Rooms/RoomTypes)
+        const [users, bookings, hotels, packages] = await Promise.all([
+            usersPromise,
+            bookingsPromise,
+            this.prisma.hotel.findMany({
+                where: {
+                    OR: [
+                        { name: { contains: q, mode: 'insensitive' } },
+                        { city: { contains: q, mode: 'insensitive' } },
+                        { owner: { email: { contains: q, mode: 'insensitive' } } }
+                    ]
+                },
+                take: 5,
+                include: { owner: true }
+            }),
+            this.prisma.subscriptionPlan.findMany({
+                where: {
+                    name: { contains: q, mode: 'insensitive' }
+                },
+                take: 5
+            })
+        ]);
+        return { users, bookings, rooms: [], roomTypes: [], hotels, packages };
+    }
   }
 }

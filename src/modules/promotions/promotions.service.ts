@@ -7,6 +7,16 @@ export class PromotionsService {
   constructor(private prisma: PrismaService) {}
 
   async create(data: Prisma.PromotionUncheckedCreateInput) {
+    if (data.hotelId) {
+      const hotel = await this.prisma.hotel.findUnique({
+        where: { id: data.hotelId },
+        select: { hasPromotions: true }
+      });
+      if (hotel && !hotel.hasPromotions) {
+        throw new BadRequestException('Your current plan does not support Promotions. Please upgrade to PRO or higher to create discount codes.');
+      }
+    }
+
     const existing = await this.prisma.promotion.findUnique({
       where: { code: data.code }
     });

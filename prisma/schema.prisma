@@ -97,6 +97,15 @@ model Hotel {
   
   // Subscription
   subscriptionEnd   DateTime?
+  
+  // --- Dynamic Plan Limits & Features ---
+  maxRooms         Int      @default(5)     // e.g. LITE=5, PRO=50, ENT=Unlimited
+  maxRoomTypes     Int      @default(2)     // e.g. LITE=2, PRO=10, ENT=Unlimited
+  maxStaff         Int      @default(1)     // e.g. LITE=1, PRO=5, ENT=Unlimited
+  hasPromotions    Boolean  @default(false) // Can they create discount codes? (LITE=false)
+  hasOnlinePayment Boolean  @default(false) // Can they use Stripe/Omise? (LITE=false, PRO=true)
+
+  isSuspended      Boolean  @default(false) // True if account is manually suspended by Super Admin
 
   // RBAC: owner of this hotel
   ownerId String?
@@ -109,6 +118,7 @@ model Hotel {
   promotions Promotion[]
   expenses   Expense[]
   messages   Message[]
+  subscriptionPayments SubscriptionPayment[]
 
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
@@ -147,6 +157,7 @@ enum RoomStatus {
   CLEANING
   INSPECTED
   OOO
+  OCCUPIED
 }
 
 model Room {
@@ -321,6 +332,21 @@ model Payment {
   updatedAt DateTime @updatedAt @default(now())
 }
 
+model SubscriptionPayment {
+  id          String   @id @default(cuid())
+  hotelId     String
+  amount      Int      // In Subunits (e.g. Satang) or Integer THB
+  currency    String   @default("THB")
+  plan        String   // PRO, ENTERPRISE
+  status      String   @default("success") // success, failed
+  provider    String   @default("stripe")
+  chargeId    String?  // Stripe Charge ID
+  
+  hotel       Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+}
+
 model FolioCharge {
   id          String   @id @default(cuid())
   bookingId   String
@@ -405,3 +431,32 @@ model Expense {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+//
+// ─── SUBSCRIPTION PLANS ─────────────────────────────────────────────────
+//
+
+model SubscriptionPlan {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  price           Float
+  priceLabel      String   @default("Free") // e.g. "Free", "฿1,500", "Custom"
+  period          String   @default("/month")
+  description     String?
+  features        String[]
+  missingFeatures String[]
+  isPopular       Boolean  @default(false)
+  color           String   @default("emerald")
+  icon            String   @default("Zap")
+  
+  // Limits
+  maxRooms        Int      @default(5)
+  maxRoomTypes    Int      @default(2)
+  maxStaff        Int      @default(1)
+  hasPromotions   Boolean  @default(false)
+  hasOnlinePayment Boolean @default(false)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+

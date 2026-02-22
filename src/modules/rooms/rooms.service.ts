@@ -42,6 +42,60 @@ export class RoomsService {
     });
   }
 
+  async getAvailableRooms(roomTypeId: string, checkIn: string, checkOut: string) {
+      if (!roomTypeId || !checkIn || !checkOut) {
+          return [];
+      }
+
+      const checkInDate = new Date(checkIn);
+      const checkOutDate = new Date(checkOut);
+
+      // Find all rooms of this type
+      const rooms = await this.prisma.room.findMany({
+          where: { roomTypeId, deletedAt: null },
+          orderBy: { roomNumber: 'asc' }
+      });
+
+      // Find conflicting bookings for these dates
+      const conflictingBookings = await this.prisma.booking.findMany({
+          where: {
+              roomTypeId: roomTypeId,
+              status: { in: ['confirmed', 'checked_in'] },
+              roomId: { not: null }, // Only care about assigned rooms
+              checkIn: { lt: checkOutDate }, // Overlaps
+              checkOut: { gt: checkInDate }
+          },
+          select: { roomId: true }
+      });
+
+      const conflictingRoomIds = new Set(conflictingBookings.map(b => b.roomId));
+
+      // Fetch the latest status of each room to prefer CLEAN rooms
+      // In this basic schema, we might not have a strong 'status' column on Room directly,
+      // but let's see if we have `statusLogs` or similar. Let's assume Room has 'status' or we check logs
+      const roomIds = rooms.map(r => r.id);
+      const latestStatusLogs = await this.prisma.roomStatusLog.findMany({
+          where: { roomId: { in: roomIds } },
+          orderBy: { createdAt: 'desc' },
+          distinct: ['roomId']
+      });
+
+      const statusMap = new Map();
+      latestStatusLogs.forEach(log => statusMap.set(log.roomId, log.status));
+
+      // Filter and format
+      return rooms
+          .filter(room => !conflictingRoomIds.has(room.id))
+          .map(room => {
+               // Prefer the explicitly tracked status, default to assumed CLEAN
+               const status = statusMap.get(room.id) || 'CLEAN';
+               return {
+                   ...room,
+                   status
+               };
+          });
+  }
+
   async create(data: any) {
     // data.roomTypeId is required
     try {
@@ -61,10 +115,10 @@ export class RoomsService {
         }
       });
 
-      const pkg = roomType.hotel.package; // LITE, PRO, ENTERPRISE
+      const maxRooms = roomType.hotel.maxRooms;
       
-      if (pkg === 'LITE' && currentRoomCount >= 5) {
-          throw new ConflictException('LITE Plan is limited to 5 rooms. Please upgrade to PRO for unlimited rooms.');
+      if (currentRoomCount >= maxRooms) {
+          throw new ConflictException(`Your plan is limited to ${maxRooms} rooms. Please upgrade your plan for more rooms.`);
       }
 
       return await this.prisma.room.create({
@@ -99,10 +153,10 @@ export class RoomsService {
         }
     });
 
-    const pkg = roomType.hotel.package;
+    const maxRooms = roomType.hotel.maxRooms;
 
-    if (pkg === 'LITE' && (currentRoomCount + count) > 5) {
-        throw new ConflictException(`LITE Plan is limited to 5 rooms. You have ${currentRoomCount} rooms and are trying to add ${count} more.`);
+    if ((currentRoomCount + count) > maxRooms) {
+        throw new ConflictException(`Your plan is limited to ${maxRooms} rooms. You have ${currentRoomCount} rooms and are trying to add ${count} more.`);
     }
 
     const roomsToCreate = [];

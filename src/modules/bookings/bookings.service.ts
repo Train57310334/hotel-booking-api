@@ -143,6 +143,141 @@ export class BookingsService {
       return booking;
   }
 
+  /**
+   * 🛒 สร้างการจองผ่าน Public Booking Engine (รองรับหลายห้อง)
+   */
+  async createPublicBooking(data: any) {
+    const checkInDate = new Date(data.checkInDate);
+    const checkOutDate = new Date(data.checkOutDate);
+
+    // Ensure dates are valid
+    if (isNaN(checkInDate.getTime()) || isNaN(checkOutDate.getTime())) {
+      throw new BadRequestException('Invalid check-in or check-out date');
+    }
+
+    if (!data.rooms || !Array.isArray(data.rooms) || data.rooms.length === 0) {
+      throw new BadRequestException('At least one room must be selected');
+    }
+
+    // 1. Transactionally lock and validate everything
+    return await this.prisma.$transaction(async (tx) => {
+        let backendCalculatedTotal = 0;
+
+        for (const roomOpt of data.rooms) {
+           // A. Re-verify Inventory exactly for this quantity
+           const dateRange: Date[] = [];
+           let d = new Date(checkInDate);
+           while (d < checkOutDate) {
+              dateRange.push(new Date(d));
+              d.setDate(d.getDate() + 1);
+           }
+
+           for (const date of dateRange) {
+              const inv = await tx.inventoryCalendar.findFirst({
+                 where: { roomTypeId: roomOpt.roomTypeId, date }
+              });
+              
+              const available = inv ? inv.allotment : 0;
+              if (available < roomOpt.quantity) {
+                 throw new ConflictException(`Insufficient inventory for Room Type ${roomOpt.roomTypeId} on ${date.toISOString().split('T')[0]}`);
+              }
+           }
+
+           // B. Re-calculate Price exactly for this room and rate plan
+           // To reuse `calculateTotalPrice` inside a transaction reliably without race conditions,
+           // we inline a simplified version or assume `calculateTotalPrice` doesn't do complex DB locking.
+           // For safety, we recalculate manually within this `tx` block.
+           
+           const roomType = await tx.roomType.findUnique({ where: { id: roomOpt.roomTypeId } });
+           if (!roomType) throw new NotFoundException('RoomType provided not found');
+
+           const ratePlan = await tx.ratePlan.findUnique({ where: { id: roomOpt.ratePlanId } });
+           if (!ratePlan) throw new NotFoundException('RatePlan provided not found');
+
+           let roomTotal = 0;
+           let cur = new Date(checkInDate);
+           
+           const overrides = await tx.rateOverride.findMany({
+               where: { roomTypeId: roomOpt.roomTypeId, ratePlanId: roomOpt.ratePlanId, date: { gte: checkInDate, lt: checkOutDate } }
+           });
+           const overrideMap = new Map<string, number>();
+           overrides.forEach(o => overrideMap.set(o.date.toISOString().split('T')[0], o.baseRate));
+
+           while (cur < checkOutDate) {
+               const dateKey = cur.toISOString().split('T')[0];
+               if (overrideMap.has(dateKey)) {
+                   roomTotal += overrideMap.get(dateKey);
+               } else {
+                   let nightly = roomType.basePrice || 0;
+                   if (ratePlan.includesBreakfast && !ratePlan.name.toLowerCase().includes('standard')) nightly += 300;
+                   roomTotal += nightly;
+               }
+               cur.setDate(cur.getDate() + 1);
+           }
+
+           // Multiply by quantity
+           roomTotal *= roomOpt.quantity;
+           backendCalculatedTotal += roomTotal;
+        }
+
+        // C. Price Anti-Spoofing Check
+        if (Math.abs((data.totalPrice || 0) - backendCalculatedTotal) > 50) {
+            throw new BadRequestException(`Price manipulation detected. Expected ~${backendCalculatedTotal}, got ${data.totalPrice}`);
+        }
+
+        // D. Create the parent Booking record
+        // Since Prisma requires `roomTypeId` and `ratePlanId` at the top level for backwards compatibility,
+        // we map the *first* room's details to the root level.
+        // In a real multi-room DB schema, we'd have a `BookingRoom` Join Table. We will do our best with the current schema.
+        
+        const primaryRoom = data.rooms[0];
+        
+        const newBooking = await tx.booking.create({
+            data: {
+               hotelId: data.hotelId,
+               roomTypeId: primaryRoom.roomTypeId,
+               ratePlanId: primaryRoom.ratePlanId,
+               checkIn: checkInDate,
+               checkOut: checkOutDate,
+               guestsAdult: data.adults ?? 2,
+               guestsChild: data.children ?? 0,
+               totalAmount: backendCalculatedTotal,
+               status: 'pending',
+               leadName: data.guestDetails?.name ?? 'Guest',
+               leadEmail: data.guestDetails?.email ?? 'guest@example.com',
+               leadPhone: data.guestDetails?.phone ?? '',
+               specialRequests: data.guestDetails?.requests ?? null,
+            } as Prisma.BookingUncheckedCreateInput,
+            include: { hotel: true, roomType: true }
+        });
+
+        // E. Deduct Inventory (Iterate all rooms again)
+        for (const roomOpt of data.rooms) {
+            const dateRange: Date[] = [];
+            let d = new Date(checkInDate);
+            while (d < checkOutDate) {
+               dateRange.push(new Date(d));
+               d.setDate(d.getDate() + 1);
+            }
+
+            for (const date of dateRange) {
+               const inv = await tx.inventoryCalendar.findFirst({
+                  where: { roomTypeId: roomOpt.roomTypeId, date }
+               });
+               
+               if (inv) {
+                   await tx.inventoryCalendar.update({
+                      where: { id: inv.id },
+                      data: { allotment: Math.max(0, inv.allotment - roomOpt.quantity) }
+                   });
+               }
+            }
+        }
+
+        return newBooking;
+    });
+  }
+
   /** 👤 การจองของลูกค้า */
   async getMyBookings(userId: string) {
     if (!userId) throw new NotFoundException('User ID is required');
@@ -289,7 +424,7 @@ export class BookingsService {
 
 
 
-  async updateStatus(bookingId: string, status: string, hotelId: string, userId?: string) {
+  async updateStatus(bookingId: string, status: string, hotelId: string, userId?: string, roomId?: string) {
     const booking = await this.prisma.booking.findUnique({ 
         where: { id: bookingId },
         include: { room: true }
@@ -297,29 +432,62 @@ export class BookingsService {
     if (!booking) throw new NotFoundException('Booking not found');
     if (booking.hotelId !== hotelId) throw new ForbiddenException('Booking does not belong to this hotel');
 
-    const updatedBooking = await this.prisma.booking.update({
-      where: { id: bookingId },
-      data: { status },
-    });
+    // 🔒 State Machine Validations
+    if (status === 'checked_in') {
+        if (booking.status !== 'confirmed') throw new BadRequestException('Only confirmed bookings can be checked in.');
+        if (!roomId && !booking.roomId) throw new BadRequestException('A physical room must be assigned to check in.');
+        
+        const finalRoomId = roomId || booking.roomId;
+        
+        // Ensure room belongs to the requested roomType and hotel
+        const room = await this.prisma.room.findUnique({ where: { id: finalRoomId }, include: { roomType: true } });
+        if (!room || room.roomTypeId !== booking.roomTypeId) throw new BadRequestException('Invalid room assignment.');
 
-    // 🧹 Housekeeping Logic: Auto-Dirty on Checkout
-    if (status === 'checked_out' && booking.roomId) {
-        await this.prisma.$transaction([
+        // Update booking and mark room as occupied
+        return await this.prisma.$transaction([
+            this.prisma.booking.update({
+                where: { id: bookingId },
+                data: { status, roomId: finalRoomId }
+            }),
             this.prisma.room.update({
-                where: { id: booking.roomId },
-                data: { status: 'DIRTY' }
+                where: { id: finalRoomId },
+                data: { status: 'OCCUPIED' }
             }),
             this.prisma.roomStatusLog.create({
-                data: {
-                    roomId: booking.roomId,
-                    status: 'DIRTY',
-                    updatedBy: userId,
-                    note: `Auto-dirty upon checkout of Booking #${booking.id.slice(0,8)}`
-                }
+                data: { roomId: finalRoomId, status: 'OCCUPIED', updatedBy: userId, note: `Checked in booking #${booking.id}` }
             })
         ]);
     }
 
+    if (status === 'checked_out') {
+         if (booking.status !== 'checked_in') throw new BadRequestException('Booking must be checked in before checking out.');
+         
+         const finalRoomId = booking.roomId;
+         // Update booking and mark room as dirty
+         return await this.prisma.$transaction(async (tx) => {
+             const updatedBooking = await tx.booking.update({
+                 where: { id: bookingId },
+                 data: { status }
+             });
+
+             if (finalRoomId) {
+                 await tx.room.update({
+                     where: { id: finalRoomId },
+                     data: { status: 'DIRTY' }
+                 });
+                 await tx.roomStatusLog.create({
+                     data: { roomId: finalRoomId, status: 'DIRTY', updatedBy: userId, note: `Checked out booking #${booking.id}` }
+                 });
+             }
+             return updatedBooking;
+         });
+    }
+
+    // Default status update (e.g. pending -> confirmed, or cancelled)
+    const updatedBooking = await this.prisma.booking.update({
+      where: { id: bookingId },
+      data: { status },
+    });
     return updatedBooking;
   }
 
@@ -667,5 +835,121 @@ export class BookingsService {
         chartData,
         occupancyChart: occupancyChart.reverse()
     };
+  }
+
+  async generateInvoice(bookingId: string) {
+      const booking = await this.prisma.booking.findUnique({
+          where: { id: bookingId },
+          include: {
+              hotel: true,
+              roomType: true,
+              ratePlan: true,
+              folioCharges: true, 
+              room: true,
+          }
+      });
+
+      if (!booking) throw new NotFoundException('Booking not found');
+
+      const checkInDate = new Date(booking.checkIn);
+      const checkOutDate = new Date(booking.checkOut);
+      const nights = Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24));
+
+      // 1. Room Charges (Base)
+      const baseRoomCharge = booking.totalAmount; // In a real app with taxes, you'd calculate subtotal vs tax
+      const lineItems = [
+          {
+              description: `Accommodation: ${booking.roomType.name} (${nights} nights)`,
+              amount: baseRoomCharge,
+              quantity: 1
+          }
+      ];
+
+      // 2. Extra Folio Charges (if any)
+      if (booking.folioCharges && booking.folioCharges.length > 0) {
+          booking.folioCharges.forEach(charge => {
+              lineItems.push({
+                  description: charge.description,
+                  amount: charge.amount,
+                  quantity: 1 // default
+              });
+          });
+      }
+
+      const total = lineItems.reduce((acc, item) => acc + (item.amount * item.quantity), 0);
+      const taxRate = 0.07; // 7% VAT assumption
+      const taxAmount = total * taxRate;
+      const subtotal = total - taxAmount;
+
+      return {
+          invoiceId: `INV-${booking.id.toUpperCase().slice(-6)}`,
+          date: new Date().toISOString(),
+          hotel: {
+              name: booking.hotel.name,
+              address: booking.hotel.address,
+              taxId: 'TX-123456789', // Mock
+              email: booking.hotel.contactEmail,
+              phone: booking.hotel.contactPhone
+          },
+          guest: {
+              name: booking.leadName,
+              email: booking.leadEmail,
+              phone: booking.leadPhone
+          },
+          stay: {
+              checkIn: booking.checkIn,
+              checkOut: booking.checkOut,
+              nights: nights,
+              roomNumber: booking.room?.roomNumber || 'Unassigned',
+              guests: `${booking.guestsAdult} Adult(s), ${booking.guestsChild} Child(ren)`
+          },
+          lineItems,
+          summary: {
+              subtotal: Math.round(subtotal),
+              tax: Math.round(taxAmount),
+              total: total
+          },
+          paymentStatus: booking.status === 'confirmed' || booking.status === 'checked_in' || booking.status === 'checked_out' ? 'PAID' : 'DUE'
+      };
+  }
+
+  async getAllPlatformBookings(query: any = {}) {
+      // Platform Admin Only: Get all bookings across the entire system.
+      const page = Number(query.page) || 1;
+      const limit = Number(query.limit) || 50;
+      const skip = (page - 1) * limit;
+
+      const whereClause: any = {};
+      if (query.hotelId) {
+          whereClause.hotelId = query.hotelId;
+      }
+      if (query.status) {
+          whereClause.status = query.status;
+      }
+
+      const totalItems = await this.prisma.booking.count({ where: whereClause });
+      
+      const bookings = await this.prisma.booking.findMany({
+          where: whereClause,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          include: {
+              hotel: { select: { name: true, contactEmail: true } },
+              roomType: { select: { name: true } },
+              user: { select: { name: true, email: true } }
+          }
+      });
+
+      return {
+          bookings,
+          meta: {
+              totalItems,
+              itemCount: bookings.length,
+              itemsPerPage: limit,
+              totalPages: Math.ceil(totalItems / limit),
+              currentPage: page
+          }
+      };
   }
 }

@@ -239,4 +239,111 @@ export class HotelsService {
       data
     });
   }
+
+  async listForSuperAdmin() {
+    const hotels = await this.prisma.hotel.findMany({
+      include: {
+        roomTypes: {
+          include: {
+            rooms: { select: { id: true } }
+          }
+        },
+        RoleAssignment: {
+          select: { id: true }
+        }
+      },
+      orderBy: { id: 'desc' }
+    });
+
+    return hotels.map(hotel => {
+      // Calculate total rooms by summing the rooms in each roomType
+      const totalRooms = hotel.roomTypes.reduce((sum, rt) => sum + (rt.rooms?.length || 0), 0);
+      
+      return {
+        ...hotel,
+        stats: {
+          roomTypeCount: hotel.roomTypes.length,
+          roomCount: totalRooms,
+          staffCount: hotel.RoleAssignment.length,
+        },
+        roomTypes: undefined,
+        RoleAssignment: undefined
+      };
+    });
+  }
+
+  async getSuperStats() {
+    // 1. Fetch all hotels with their rooms to count inventory
+    const hotels = await this.prisma.hotel.findMany({
+      include: {
+        roomTypes: {
+          include: { rooms: { select: { id: true } } }
+        }
+      }
+    });
+
+    // 2. Aggregate
+    let totalHotels = hotels.length;
+    let totalRooms = 0;
+    let estimatedMRR = 0;
+
+    let planCounts = {
+        LITE: 0,
+        PRO: 0,
+        ENTERPRISE: 0
+    };
+
+    hotels.forEach(h => {
+        // Count rooms
+        totalRooms += h.roomTypes.reduce((sum, rt) => sum + (rt.rooms?.length || 0), 0);
+        
+        // Count plans && MRR
+        const pkg = h.package || 'LITE';
+        if (pkg === 'PRO') {
+            estimatedMRR += 990;
+            planCounts.PRO++;
+        } else if (pkg === 'ENTERPRISE') {
+            estimatedMRR += 2990;
+            planCounts.ENTERPRISE++;
+        } else {
+            planCounts.LITE++;
+        }
+    });
+
+    // 3. Mock Chart Data for MRR Growth
+    const revenueChart = [
+        { name: 'Jan', value: estimatedMRR * 0.3 },
+        { name: 'Feb', value: estimatedMRR * 0.5 },
+        { name: 'Mar', value: estimatedMRR * 0.7 },
+        { name: 'Apr', value: estimatedMRR * 0.8 },
+        { name: 'May', value: estimatedMRR * 0.9 },
+        { name: 'Jun', value: estimatedMRR },
+    ];
+
+    // 4. Mock Signups 
+    const signupsChart = [
+        { name: 'Jan', value: Math.floor(totalHotels * 0.2) },
+        { name: 'Feb', value: Math.floor(totalHotels * 0.3) },
+        { name: 'Mar', value: Math.floor(totalHotels * 0.4) },
+        { name: 'Apr', value: Math.floor(totalHotels * 0.1) },
+        { name: 'May', value: Math.floor(totalHotels * 0.5) },
+        { name: 'Jun', value: Math.floor(totalHotels * 0.8) },
+    ];
+
+    return {
+        totalHotels,
+        totalRooms,
+        estimatedMRR,
+        planCounts,
+        revenueChart,
+        signupsChart
+    }
+  }
+
+  async suspendHotel(id: string, isSuspended: boolean) {
+    return this.prisma.hotel.update({
+      where: { id },
+      data: { isSuspended }
+    });
+  }
 }

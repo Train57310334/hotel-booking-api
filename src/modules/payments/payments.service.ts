@@ -68,6 +68,16 @@ export class PaymentsService {
   }
 
   async createPaymentIntent(amount: number, currency = 'thb', description?: string, bookingId?: string) {
+    if (bookingId) {
+        const booking = await this.prisma.booking.findUnique({
+             where: { id: bookingId },
+             include: { hotel: true }
+        });
+        if (booking && !booking.hotel.hasOnlinePayment) {
+            throw new BadRequestException('Your current plan does not support online payments. Please upgrade to PRO or use Bank Transfer/Cash.');
+        }
+    }
+
     const { secretKey } = await this.settingsService.getStripeConfig();
     const stripe = new Stripe(secretKey, { apiVersion: '2024-06-20' as any });
 
@@ -115,8 +125,18 @@ export class PaymentsService {
     };
   }
 
-  async createOmiseCharge(amount: number, token: string, description?: string) {
-       // 1. Fetch Omise Keys from Settings Service
+  async createOmiseCharge(amount: number, token: string, description?: string, bookingId?: string) {
+    if (bookingId) {
+        const booking = await this.prisma.booking.findUnique({
+             where: { id: bookingId },
+             include: { hotel: true }
+        });
+        if (booking && !booking.hotel.hasOnlinePayment) {
+            throw new BadRequestException('Your current plan does not support online payments. Please upgrade to PRO or use Bank Transfer/Cash.');
+        }
+    }
+
+    // 1. Fetch Omise Keys from Settings Service
     const { publicKey, secretKey } = await this.settingsService.getOmiseConfig();
 
     // eslint-disable-next-line @typescript-eslint/no-var-requires

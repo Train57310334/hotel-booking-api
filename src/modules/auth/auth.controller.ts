@@ -2,6 +2,8 @@ import { Body, Controller, Get, Post, UseGuards, Req } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { RolesGuard } from './guards/roles.guard';
+import { Roles } from './decorators/roles.decorator';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -31,5 +33,13 @@ export class AuthController {
   @Get('me')
   async getProfile(@Req() req: any) {
     return this.authService.getProfile(req.user.userId);
+  }
+
+  /** 🕵️ เข้าสิงระบบลูกค้า (เฉพาะ Platform Admin) */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('platform_admin')
+  @Post('impersonate')
+  async impersonate(@Body() body: { targetHotelId: string }) {
+    return this.authService.impersonate(body.targetHotelId);
   }
 }

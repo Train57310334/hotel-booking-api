@@ -33,6 +33,7 @@ import { StaffModule } from './modules/staff/staff.module';
 import { NightAuditModule } from './modules/night-audit/night-audit.module';
 import { FolioModule } from './modules/folio/folio.module';
 import { DownloadsModule } from './modules/downloads/downloads.module';
+import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 
 @Module({
   imports: [
@@ -63,9 +64,9 @@ import { DownloadsModule } from './modules/downloads/downloads.module';
     GuestsModule,
     StaffModule,
     NightAuditModule,
-    NightAuditModule,
     FolioModule,
     DownloadsModule,
+    SubscriptionsModule,
   ],
   providers: [PrismaService],
 })
