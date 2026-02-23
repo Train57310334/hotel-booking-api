@@ -1,0 +1,1 @@
+{"version":3,"file":"count-hotels.js","sourceRoot":"","sources":["../../prisma/count-hotels.ts"],"names":[],"mappings":";;AACA,2CAA6C;AAC7C,MAAM,MAAM,GAAG,IAAI,qBAAY,EAAE,CAAA;AACjC,KAAK,UAAU,IAAI;IACjB,MAAM,KAAK,GAAG,MAAM,MAAM,CAAC,KAAK,CAAC,KAAK,EAAE,CAAA;IACxC,OAAO,CAAC,GAAG,CAAC,gBAAgB,KAAK,EAAE,CAAC,CAAA;AACtC,CAAC;AACD,IAAI,EAAE,CAAA"}
