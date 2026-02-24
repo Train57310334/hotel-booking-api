@@ -8,6 +8,7 @@ export declare class RatesController {
         hotelId: string;
         roomTypeId: string | null;
         includesBreakfast: boolean;
+        breakfastPrice: number;
         cancellationRule: string | null;
         adultPricePolicy: string | null;
         childPricePolicy: string | null;
@@ -18,10 +19,10 @@ export declare class RatesController {
             name: string;
             createdAt: Date;
             updatedAt: Date;
+            hotelId: string;
             description: string | null;
             images: string[];
             amenities: string[];
-            hotelId: string;
             bedConfig: string | null;
             sizeSqm: number | null;
             basePrice: number | null;
@@ -36,6 +37,7 @@ export declare class RatesController {
         hotelId: string;
         roomTypeId: string | null;
         includesBreakfast: boolean;
+        breakfastPrice: number;
         cancellationRule: string | null;
         adultPricePolicy: string | null;
         childPricePolicy: string | null;
@@ -46,6 +48,7 @@ export declare class RatesController {
         hotelId: string;
         roomTypeId: string | null;
         includesBreakfast: boolean;
+        breakfastPrice: number;
         cancellationRule: string | null;
         adultPricePolicy: string | null;
         childPricePolicy: string | null;
@@ -56,6 +59,7 @@ export declare class RatesController {
         hotelId: string;
         roomTypeId: string | null;
         includesBreakfast: boolean;
+        breakfastPrice: number;
         cancellationRule: string | null;
         adultPricePolicy: string | null;
         childPricePolicy: string | null;

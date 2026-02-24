@@ -8,10 +8,10 @@ export declare class RoomsController {
             name: string;
             createdAt: Date;
             updatedAt: Date;
+            hotelId: string;
             description: string | null;
             images: string[];
             amenities: string[];
-            hotelId: string;
             bedConfig: string | null;
             sizeSqm: number | null;
             basePrice: number | null;
@@ -38,7 +38,7 @@ export declare class RoomsController {
             leadEmail: string;
             leadPhone: string;
             specialRequests: string | null;
-            roomId: string;
+            roomId: string | null;
         }[];
         statusLogs: {
             id: string;
@@ -81,10 +81,10 @@ export declare class RoomsController {
             name: string;
             createdAt: Date;
             updatedAt: Date;
+            hotelId: string;
             description: string | null;
             images: string[];
             amenities: string[];
-            hotelId: string;
             bedConfig: string | null;
             sizeSqm: number | null;
             basePrice: number | null;

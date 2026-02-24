@@ -220,6 +220,7 @@ model RatePlan {
   roomTypeId        String?
   name              String
   includesBreakfast Boolean @default(false)
+  breakfastPrice    Int     @default(0)  // Price added per night when breakfast is included (set by hotel)
   cancellationRule  String?
   adultPricePolicy  String?
   childPricePolicy  String?
@@ -291,8 +292,8 @@ model Booking {
   ratePlan RatePlan @relation(fields: [ratePlanId], references: [id])
   payment  Payment?
 
-  room    Room    @relation("RoomBookings", fields: [roomId], references: [id])
-  roomId  String
+  room    Room?   @relation("RoomBookings", fields: [roomId], references: [id])
+  roomId  String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -9,9 +9,9 @@ export declare class RolesController {
     }): Promise<{
         id: string;
         createdAt: Date;
-        role: string;
         userId: string;
         hotelId: string | null;
+        role: string;
     }>;
     getRolesByUser(userId: string): Promise<({
         hotel: {
@@ -21,16 +21,16 @@ export declare class RolesController {
     } & {
         id: string;
         createdAt: Date;
-        role: string;
         userId: string;
         hotelId: string | null;
+        role: string;
     })[]>;
     revokeRole(id: string): Promise<{
         id: string;
         createdAt: Date;
-        role: string;
         userId: string;
         hotelId: string | null;
+        role: string;
     }>;
     listHotelAdmins(): Promise<({
         user: {
@@ -45,9 +45,9 @@ export declare class RolesController {
     } & {
         id: string;
         createdAt: Date;
-        role: string;
         userId: string;
         hotelId: string | null;
+        role: string;
     })[]>;
 }
 //# sourceMappingURL=roles.controller.d.ts.map

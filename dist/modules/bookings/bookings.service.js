@@ -11,14 +11,40 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BookingsService = void 0;
 const common_1 = require("@nestjs/common");
+const schedule_1 = require("@nestjs/schedule");
 const prisma_service_1 = require("../../common/prisma/prisma.service");
 const notifications_service_1 = require("../notifications/notifications.service");
 const inventory_service_1 = require("../inventory/inventory.service");
+const crypto_1 = require("crypto");
 let BookingsService = class BookingsService {
     constructor(prisma, notificationsService, inventoryService) {
         this.prisma = prisma;
         this.notificationsService = notificationsService;
         this.inventoryService = inventoryService;
+        this.draftStore = new Map();
+    }
+    saveDraft(data) {
+        const draftId = (0, crypto_1.randomUUID)();
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+        this.draftStore.set(draftId, { data, expiresAt });
+        return { draftId, expiresAt };
+    }
+    getDraft(draftId) {
+        const draft = this.draftStore.get(draftId);
+        if (!draft)
+            return null;
+        if (new Date() > draft.expiresAt) {
+            this.draftStore.delete(draftId);
+            return null;
+        }
+        return draft.data;
+    }
+    cleanExpiredDrafts() {
+        const now = new Date();
+        for (const [key, draft] of this.draftStore.entries()) {
+            if (now > draft.expiresAt)
+                this.draftStore.delete(key);
+        }
     }
     async create(data) {
         const available = await this.inventoryService.checkAvailability(data.roomTypeId, data.checkIn, data.checkOut);
@@ -160,8 +186,9 @@ let BookingsService = class BookingsService {
                     }
                     else {
                         let nightly = roomType.basePrice || 0;
-                        if (ratePlan.includesBreakfast && !ratePlan.name.toLowerCase().includes('standard'))
-                            nightly += 300;
+                        if (ratePlan.includesBreakfast && ratePlan.breakfastPrice > 0) {
+                            nightly += ratePlan.breakfastPrice;
+                        }
                         roomTotal += nightly;
                     }
                     cur.setDate(cur.getDate() + 1);
@@ -191,6 +218,18 @@ let BookingsService = class BookingsService {
                 },
                 include: { hotel: true, roomType: true }
             });
+            if (data.paymentMethod) {
+                await tx.payment.create({
+                    data: {
+                        bookingId: newBooking.id,
+                        amount: backendCalculatedTotal,
+                        provider: data.paymentMethod,
+                        status: data.paymentStatus ?? 'pending',
+                        currency: 'THB',
+                        method: data.paymentMethod,
+                    }
+                });
+            }
             for (const roomOpt of data.rooms) {
                 const dateRange = [];
                 let d = new Date(checkInDate);
@@ -313,6 +352,8 @@ let BookingsService = class BookingsService {
         else {
             orderBy.createdAt = 'desc';
         }
+        const pageNum = Math.max(1, Number(page) || 1);
+        const limitNum = Math.max(1, Number(limit) || 20);
         const [data, total] = await Promise.all([
             this.prisma.booking.findMany({
                 where,
@@ -325,8 +366,8 @@ let BookingsService = class BookingsService {
                     guests: true,
                 },
                 orderBy,
-                skip: (page - 1) * limit,
-                take: Number(limit),
+                skip: (pageNum - 1) * limitNum,
+                take: limitNum,
             }),
             this.prisma.booking.count({ where })
         ]);
@@ -334,9 +375,9 @@ let BookingsService = class BookingsService {
             data,
             meta: {
                 total,
-                page: Number(page),
-                last_page: Math.ceil(total / limit),
-                limit: Number(limit)
+                page: pageNum,
+                last_page: Math.ceil(total / limitNum),
+                limit: limitNum
             }
         };
     }
@@ -398,123 +439,6 @@ let BookingsService = class BookingsService {
             data: { status },
         });
         return updatedBooking;
-    }
-    async getDashboardStats(period = 'month') {
-        const now = new Date();
-        let startDate = new Date();
-        switch (period) {
-            case 'today':
-                startDate.setHours(0, 0, 0, 0);
-                break;
-            case 'week':
-                const day = startDate.getDay();
-                const diff = startDate.getDate() - day + (day === 0 ? -6 : 1);
-                startDate.setDate(diff);
-                startDate.setHours(0, 0, 0, 0);
-                break;
-            case 'month':
-                startDate.setDate(1);
-                startDate.setHours(0, 0, 0, 0);
-                break;
-            case 'year':
-                startDate.setMonth(0, 1);
-                startDate.setHours(0, 0, 0, 0);
-                break;
-            case 'all':
-                startDate = new Date(0);
-                break;
-            default:
-                startDate.setDate(1);
-        }
-        const totalBookings = await this.prisma.booking.count({
-            where: { createdAt: { gte: startDate } }
-        });
-        const confirmedBookings = await this.prisma.booking.count({
-            where: {
-                status: 'confirmed',
-                createdAt: { gte: startDate }
-            }
-        });
-        const totalRevenue = await this.prisma.booking.aggregate({
-            _sum: { totalAmount: true },
-            where: {
-                status: { not: 'cancelled' },
-                createdAt: { gte: startDate }
-            },
-        });
-        const sixMonthsAgo = new Date();
-        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-        sixMonthsAgo.setDate(1);
-        const recentBookings = await this.prisma.booking.findMany({
-            where: {
-                status: { not: 'cancelled' },
-                createdAt: { gte: sixMonthsAgo },
-            },
-            select: { totalAmount: true, createdAt: true },
-        });
-        const revenueMap = new Map();
-        for (let i = 0; i < 6; i++) {
-            const d = new Date();
-            d.setMonth(d.getMonth() - i);
-            const key = d.toLocaleString('default', { month: 'short' });
-            revenueMap.set(key, 0);
-        }
-        recentBookings.forEach(b => {
-            const key = new Date(b.createdAt).toLocaleString('default', { month: 'short' });
-            if (revenueMap.has(key)) {
-                revenueMap.set(key, (revenueMap.get(key) || 0) + b.totalAmount);
-            }
-        });
-        const chartData = Array.from(revenueMap.entries()).map(([name, value]) => ({ name, value })).reverse();
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const inventory = await this.prisma.inventoryCalendar.aggregate({
-            _sum: { allotment: true },
-            where: { date: today }
-        });
-        const occupied = await this.prisma.booking.count({
-            where: {
-                status: { in: ['confirmed', 'checked_in'] },
-                checkIn: { lte: today },
-                checkOut: { gt: today }
-            }
-        });
-        const totalRooms = inventory._sum.allotment || 50;
-        const availableRooms = Math.max(0, totalRooms - occupied);
-        const occupancyRate = totalRooms > 0 ? Math.round((occupied / totalRooms) * 100) : 0;
-        const checkInsToday = await this.prisma.booking.count({
-            where: { checkIn: { gte: today, lt: new Date(today.getTime() + 86400000) }, status: 'confirmed' }
-        });
-        const checkOutsToday = await this.prisma.booking.count({
-            where: { checkOut: { gte: today, lt: new Date(today.getTime() + 86400000) }, status: 'checked_in' }
-        });
-        const occupancyChart = [];
-        for (let i = 6; i >= 0; i--) {
-            const d = new Date(today);
-            d.setDate(d.getDate() - i);
-            const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
-            const active = await this.prisma.booking.count({
-                where: {
-                    status: { in: ['confirmed', 'checked_in', 'checked_out'] },
-                    checkIn: { lte: d },
-                    checkOut: { gt: d }
-                }
-            });
-            const rate = totalRooms > 0 ? Math.round((active / totalRooms) * 100) : 0;
-            occupancyChart.push({ name: dayLabel, value: rate });
-        }
-        return {
-            totalBookings,
-            confirmedBookings,
-            totalRevenue: totalRevenue._sum.totalAmount || 0,
-            chartData,
-            occupancyChart,
-            totalRooms,
-            availableRooms,
-            checkInsToday,
-            checkOutsToday,
-            occupancyRate
-        };
     }
     async getCalendarBookings(hotelId, month, year) {
         if (!hotelId)
@@ -791,6 +715,12 @@ let BookingsService = class BookingsService {
     }
 };
 exports.BookingsService = BookingsService;
+__decorate([
+    (0, schedule_1.Cron)('0 */5 * * * *'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", void 0)
+], BookingsService.prototype, "cleanExpiredDrafts", null);
 exports.BookingsService = BookingsService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,

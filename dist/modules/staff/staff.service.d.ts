@@ -7,9 +7,9 @@ export declare class StaffService {
         roleAssignments: {
             id: string;
             createdAt: Date;
-            role: string;
             userId: string;
             hotelId: string | null;
+            role: string;
         }[];
         id: string;
         email: string;
@@ -41,16 +41,16 @@ export declare class StaffService {
     updateRole(hotelId: string, userId: string, role: string): Promise<{
         id: string;
         createdAt: Date;
-        role: string;
         userId: string;
         hotelId: string | null;
+        role: string;
     }>;
     remove(hotelId: string, userId: string): Promise<{
         id: string;
         createdAt: Date;
-        role: string;
         userId: string;
         hotelId: string | null;
+        role: string;
     }>;
 }
 //# sourceMappingURL=staff.service.d.ts.map
