@@ -91,9 +91,9 @@ export declare class AuthService {
             roleAssignments: {
                 id: string;
                 createdAt: Date;
-                role: string;
                 userId: string;
                 hotelId: string | null;
+                role: string;
             }[];
         } & {
             id: string;
@@ -155,9 +155,9 @@ export declare class AuthService {
         } & {
             id: string;
             createdAt: Date;
-            role: string;
             userId: string;
             hotelId: string | null;
+            role: string;
         })[];
     }>;
     impersonate(targetHotelId: string): Promise<{
@@ -165,9 +165,9 @@ export declare class AuthService {
             roleAssignments: {
                 id: string;
                 createdAt: Date;
-                role: string;
                 userId: string;
                 hotelId: string | null;
+                role: string;
             }[];
         } & {
             id: string;

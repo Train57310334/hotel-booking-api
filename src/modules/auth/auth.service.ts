@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/co
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
+import { invalidateUserCache } from './jwt.strategy';
 
 @Injectable()
 export class AuthService {
@@ -161,6 +162,10 @@ export class AuthService {
 
     // 2. Generate a token AS IF they just logged in
     const token = this.generateToken(targetUser, targetHotelId);
+
+    // Clear any stale JWT cache for this user so fresh permissions are loaded
+    invalidateUserCache(targetUser.id);
+
     return { user: targetUser, token, isImpersonating: true };
   }
 

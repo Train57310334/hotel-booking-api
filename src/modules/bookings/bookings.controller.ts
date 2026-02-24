@@ -8,6 +8,7 @@ import {
   Req,
   Put,
   ForbiddenException,
+  NotFoundException,
   Query,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
@@ -107,6 +108,30 @@ export class BookingsController {
       console.error('Error in BookingsController.create:', e);
       throw e;
     }
+  }
+
+  /**
+   * 📋 สร้าง Booking Draft (Session สำรองกันหาย localStorage)
+   * Public endpoint — ไม่ต้อง auth
+   * ข้อมูลหมดอายุใน 15 นาที
+   */
+  @Post('draft')
+  async createDraft(@Body() data: any) {
+    const result = this.svc.saveDraft(data);
+    return { draftId: result.draftId, expiresAt: result.expiresAt };
+  }
+
+  /**
+   * 📋 ดึง Booking Draft กลับมา (Fallback เมื่อ localStorage หาย)
+   * Public endpoint — ไม่ต้อง auth
+   */
+  @Get('draft/:id')
+  async getDraft(@Param('id') id: string) {
+    const data = this.svc.getDraft(id);
+    if (!data) {
+      throw new NotFoundException('Booking session not found or expired. Please start a new booking.');
+    }
+    return data;
   }
 
   /**

@@ -47,6 +47,7 @@ const common_1 = require("@nestjs/common");
 const jwt_1 = require("@nestjs/jwt");
 const prisma_service_1 = require("../../common/prisma/prisma.service");
 const bcrypt = __importStar(require("bcryptjs"));
+const jwt_strategy_1 = require("./jwt.strategy");
 let AuthService = class AuthService {
     constructor(prisma, jwtService) {
         this.prisma = prisma;
@@ -167,6 +168,7 @@ let AuthService = class AuthService {
             throw new common_1.UnauthorizedException('Target user not found');
         }
         const token = this.generateToken(targetUser, targetHotelId);
+        (0, jwt_strategy_1.invalidateUserCache)(targetUser.id);
         return { user: targetUser, token, isImpersonating: true };
     }
     generateToken(user, forceHotelId) {

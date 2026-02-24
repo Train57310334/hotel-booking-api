@@ -76,10 +76,10 @@ export declare class UsersService {
                 name: string;
                 createdAt: Date;
                 updatedAt: Date;
+                hotelId: string;
                 description: string | null;
                 images: string[];
                 amenities: string[];
-                hotelId: string;
                 bedConfig: string | null;
                 sizeSqm: number | null;
                 basePrice: number | null;
@@ -106,7 +106,7 @@ export declare class UsersService {
             leadEmail: string;
             leadPhone: string;
             specialRequests: string | null;
-            roomId: string;
+            roomId: string | null;
         })[];
         _count: {
             bookings: number;

@@ -1,8 +1,10 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '@/common/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { InventoryService } from '@/modules/inventory/inventory.service';
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class BookingsService {
@@ -11,6 +13,37 @@ export class BookingsService {
     private notificationsService: NotificationsService,
     private inventoryService: InventoryService,
   ) {}
+
+  // ─── BOOKING DRAFT STORE (In-Memory, 15-min TTL) ─────────────────────────
+  // Allows payment page to recover booking payload if localStorage is cleared.
+  // Keyed by UUID, auto-expired to prevent memory leaks.
+  private draftStore = new Map<string, { data: any; expiresAt: Date }>();
+
+  saveDraft(data: any): { draftId: string; expiresAt: Date } {
+    const draftId = randomUUID();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    this.draftStore.set(draftId, { data, expiresAt });
+    return { draftId, expiresAt };
+  }
+
+  getDraft(draftId: string): any | null {
+    const draft = this.draftStore.get(draftId);
+    if (!draft) return null;
+    if (new Date() > draft.expiresAt) {
+      this.draftStore.delete(draftId);
+      return null;
+    }
+    return draft.data;
+  }
+
+  @Cron('0 */5 * * * *') // Every 5 minutes
+  cleanExpiredDrafts() {
+    const now = new Date();
+    for (const [key, draft] of this.draftStore.entries()) {
+      if (now > draft.expiresAt) this.draftStore.delete(key);
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   async create(data: any) {
       // 1. Check Inventory Availability (General Room Type)
@@ -191,7 +224,7 @@ export class BookingsService {
            const roomType = await tx.roomType.findUnique({ where: { id: roomOpt.roomTypeId } });
            if (!roomType) throw new NotFoundException('RoomType provided not found');
 
-           const ratePlan = await tx.ratePlan.findUnique({ where: { id: roomOpt.ratePlanId } });
+           const ratePlan = await tx.ratePlan.findUnique({ where: { id: roomOpt.ratePlanId } }) as any;
            if (!ratePlan) throw new NotFoundException('RatePlan provided not found');
 
            let roomTotal = 0;
@@ -209,7 +242,10 @@ export class BookingsService {
                    roomTotal += overrideMap.get(dateKey);
                } else {
                    let nightly = roomType.basePrice || 0;
-                   if (ratePlan.includesBreakfast && !ratePlan.name.toLowerCase().includes('standard')) nightly += 300;
+                   // Use breakfastPrice from RatePlan (set by hotel admin) — no more hardcoded value
+                   if (ratePlan.includesBreakfast && ratePlan.breakfastPrice > 0) {
+                       nightly += ratePlan.breakfastPrice;
+                   }
                    roomTotal += nightly;
                }
                cur.setDate(cur.getDate() + 1);
@@ -251,7 +287,22 @@ export class BookingsService {
             include: { hotel: true, roomType: true }
         });
 
-        // E. Deduct Inventory (Iterate all rooms again)
+        // E. Save Payment record if paymentMethod is provided (from payment.js)
+        // This is the SINGLE creation point — ensures payment is always linked to booking atomically
+        if (data.paymentMethod) {
+            await tx.payment.create({
+                data: {
+                    bookingId: newBooking.id,
+                    amount: backendCalculatedTotal,
+                    provider: data.paymentMethod,
+                    status: data.paymentStatus ?? 'pending',
+                    currency: 'THB',
+                    method: data.paymentMethod,
+                }
+            });
+        }
+
+        // F. Deduct Inventory (Iterate all rooms again)
         for (const roomOpt of data.rooms) {
             const dateRange: Date[] = [];
             let d = new Date(checkInDate);
@@ -393,6 +444,9 @@ export class BookingsService {
         orderBy.createdAt = 'desc';
     }
 
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limitNum = Math.max(1, Number(limit) || 20);
+
     const [data, total] = await Promise.all([
         this.prisma.booking.findMany({
             where,
@@ -405,8 +459,8 @@ export class BookingsService {
                 guests: true,
             },
             orderBy,
-            skip: (page - 1) * limit,
-            take: Number(limit),
+            skip: (pageNum - 1) * limitNum,
+            take: limitNum,
         }),
         this.prisma.booking.count({ where })
     ]);
@@ -415,12 +469,13 @@ export class BookingsService {
         data,
         meta: {
             total,
-            page: Number(page),
-            last_page: Math.ceil(total / limit),
-            limit: Number(limit)
+            page: pageNum,
+            last_page: Math.ceil(total / limitNum),
+            limit: limitNum
         }
     };
   }
+
 
 
 
@@ -489,157 +544,6 @@ export class BookingsService {
       data: { status },
     });
     return updatedBooking;
-  }
-
-  async getDashboardStats(period: string = 'month') {
-    // 🗓️ Calculate Date Range
-    const now = new Date();
-    let startDate = new Date();
-
-    switch (period) {
-      case 'today':
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'week':
-        const day = startDate.getDay();
-        const diff = startDate.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Monday start
-        startDate.setDate(diff);
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'month':
-        startDate.setDate(1);
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'year':
-        startDate.setMonth(0, 1);
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'all':
-        startDate = new Date(0); // Epoch
-        break;
-      default:
-        startDate.setDate(1); // Default to month
-    }
-
-    // 💰 Stats filtered by period
-    const totalBookings = await this.prisma.booking.count({
-        where: { createdAt: { gte: startDate } }
-    });
-    
-    const confirmedBookings = await this.prisma.booking.count({ 
-        where: { 
-            status: 'confirmed',
-            createdAt: { gte: startDate }
-        } 
-    });
-
-    const totalRevenue = await this.prisma.booking.aggregate({
-      _sum: { totalAmount: true },
-      where: { 
-          status: { not: 'cancelled' },
-          createdAt: { gte: startDate }
-      },
-    });
-
-    // 📊 Revenue Chart Data (Last 6 months OR Last 7 days if period is tight?)
-    // For now, keep the chart logic separate (Always 6 months trend) or aligned? 
-    // User request is likely about the Cards. Let's keep Chart as "Trends" (Fixed 6 months) for stability, 
-    // or arguably chart should reflect view. Let's keep chart fixed for now to avoid breaking UI.
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-    sixMonthsAgo.setDate(1); 
-
-    const recentBookings = await this.prisma.booking.findMany({
-      where: {
-        status: { not: 'cancelled' },
-        createdAt: { gte: sixMonthsAgo },
-      },
-      select: { totalAmount: true, createdAt: true },
-    });
-
-    const revenueMap = new Map<string, number>();
-    // Initialize last 6 months
-    for (let i = 0; i < 6; i++) {
-        const d = new Date();
-        d.setMonth(d.getMonth() - i);
-        const key = d.toLocaleString('default', { month: 'short' });
-        revenueMap.set(key, 0);
-    }
-
-    recentBookings.forEach(b => {
-        const key = new Date(b.createdAt).toLocaleString('default', { month: 'short' });
-        if (revenueMap.has(key)) {
-            revenueMap.set(key, (revenueMap.get(key) || 0) + b.totalAmount);
-        }
-    });
-
-    // Sort by chronological order (simple approach: just reverse the map keys if generated backwards, but better to build array)
-    const chartData = Array.from(revenueMap.entries()).map(([name, value]) => ({ name, value })).reverse();
-
-    // 🏨 Room Stats
-    // Assuming simple inventory logic for now (InventoryCalendar sum for today)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const inventory = await this.prisma.inventoryCalendar.aggregate({
-        _sum: { allotment: true },
-        where: { date: today }
-    });
-    
-    const occupied = await this.prisma.booking.count({
-        where: {
-            status: { in: ['confirmed', 'checked_in'] },
-            checkIn: { lte: today },
-            checkOut: { gt: today }
-        }
-    });
-
-    const totalRooms = inventory._sum.allotment || 50; // Fallback to 50 if no inventory set
-    const availableRooms = Math.max(0, totalRooms - occupied);
-    const occupancyRate = totalRooms > 0 ? Math.round((occupied / totalRooms) * 100) : 0;
-
-    // 🛎️ Check-ins / Check-outs Today
-    const checkInsToday = await this.prisma.booking.count({ 
-        where: { checkIn: { gte: today, lt: new Date(today.getTime() + 86400000) }, status: 'confirmed' }
-    });
-    const checkOutsToday = await this.prisma.booking.count({ 
-        where: { checkOut: { gte: today, lt: new Date(today.getTime() + 86400000) }, status: 'checked_in' }
-    });
-
-    // 📈 Occupancy Chart (Last 7 Days)
-    const occupancyChart = [];
-    for (let i = 6; i >= 0; i--) {
-        const d = new Date(today);
-        d.setDate(d.getDate() - i);
-        const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
-        
-        // Count occupied for that specific past date
-        // Note: precise inventory history might not exist, checking active bookings for that date
-        const active = await this.prisma.booking.count({
-             where: {
-                 status: { in: ['confirmed', 'checked_in', 'checked_out'] }, // include checked_out if they stayed that night
-                 checkIn: { lte: d },
-                 checkOut: { gt: d }
-             }
-        });
-        
-        // Assume totalRooms is constant for trend simplicity or fetch historic if complex
-        const rate = totalRooms > 0 ? Math.round((active / totalRooms) * 100) : 0;
-        occupancyChart.push({ name: dayLabel, value: rate });
-    }
-
-    return {
-      totalBookings,
-      confirmedBookings,
-      totalRevenue: totalRevenue._sum.totalAmount || 0,
-      chartData, // Revenue Chart
-      occupancyChart, // New Occupancy Chart
-      totalRooms,
-      availableRooms,
-      checkInsToday,
-      checkOutsToday,
-      occupancyRate
-    };
   }
 
   async getCalendarBookings(hotelId: string, month: number, year: number) {
@@ -768,6 +672,7 @@ export class BookingsService {
   }
 
 
+  // Single authoritative dashboard stats function (hotel-scoped, replaces old unscoped getDashboardStats)
   async getDashboardStatsNew(hotelId: string, period: string = 'month') {
     if (!hotelId) throw new BadRequestException('Hotel ID is required for dashboard stats');
     const now = new Date();

@@ -89,9 +89,9 @@ export declare class AuthController {
             roleAssignments: {
                 id: string;
                 createdAt: Date;
-                role: string;
                 userId: string;
                 hotelId: string | null;
+                role: string;
             }[];
         } & {
             id: string;
@@ -153,9 +153,9 @@ export declare class AuthController {
         } & {
             id: string;
             createdAt: Date;
-            role: string;
             userId: string;
             hotelId: string | null;
+            role: string;
         })[];
     }>;
     impersonate(body: {
@@ -165,9 +165,9 @@ export declare class AuthController {
             roleAssignments: {
                 id: string;
                 createdAt: Date;
-                role: string;
                 userId: string;
                 hotelId: string | null;
+                role: string;
             }[];
         } & {
             id: string;

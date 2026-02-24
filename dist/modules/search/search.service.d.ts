@@ -33,7 +33,7 @@ export declare class SearchService {
                     leadEmail: string;
                     leadPhone: string;
                     specialRequests: string | null;
-                    roomId: string;
+                    roomId: string | null;
                 }[];
             } & {
                 id: string;
@@ -47,10 +47,10 @@ export declare class SearchService {
             name: string;
             createdAt: Date;
             updatedAt: Date;
+            hotelId: string;
             description: string | null;
             images: string[];
             amenities: string[];
-            hotelId: string;
             bedConfig: string | null;
             sizeSqm: number | null;
             basePrice: number | null;
@@ -112,10 +112,10 @@ export declare class SearchService {
                 name: string;
                 createdAt: Date;
                 updatedAt: Date;
+                hotelId: string;
                 description: string | null;
                 images: string[];
                 amenities: string[];
-                hotelId: string;
                 bedConfig: string | null;
                 sizeSqm: number | null;
                 basePrice: number | null;
@@ -142,7 +142,7 @@ export declare class SearchService {
             leadEmail: string;
             leadPhone: string;
             specialRequests: string | null;
-            roomId: string;
+            roomId: string | null;
         })[];
         rooms: ({
             roomType: {
@@ -150,10 +150,10 @@ export declare class SearchService {
                 name: string;
                 createdAt: Date;
                 updatedAt: Date;
+                hotelId: string;
                 description: string | null;
                 images: string[];
                 amenities: string[];
-                hotelId: string;
                 bedConfig: string | null;
                 sizeSqm: number | null;
                 basePrice: number | null;
@@ -174,10 +174,10 @@ export declare class SearchService {
             name: string;
             createdAt: Date;
             updatedAt: Date;
+            hotelId: string;
             description: string | null;
             images: string[];
             amenities: string[];
-            hotelId: string;
             bedConfig: string | null;
             sizeSqm: number | null;
             basePrice: number | null;
@@ -209,10 +209,10 @@ export declare class SearchService {
                 name: string;
                 createdAt: Date;
                 updatedAt: Date;
+                hotelId: string;
                 description: string | null;
                 images: string[];
                 amenities: string[];
-                hotelId: string;
                 bedConfig: string | null;
                 sizeSqm: number | null;
                 basePrice: number | null;
@@ -239,7 +239,7 @@ export declare class SearchService {
             leadEmail: string;
             leadPhone: string;
             specialRequests: string | null;
-            roomId: string;
+            roomId: string | null;
         })[];
         rooms: any[];
         roomTypes: any[];

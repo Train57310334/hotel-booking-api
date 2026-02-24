@@ -6,12 +6,19 @@ export declare class BookingsService {
     private notificationsService;
     private inventoryService;
     constructor(prisma: PrismaService, notificationsService: NotificationsService, inventoryService: InventoryService);
+    private draftStore;
+    saveDraft(data: any): {
+        draftId: string;
+        expiresAt: Date;
+    };
+    getDraft(draftId: string): any | null;
+    cleanExpiredDrafts(): void;
     create(data: any): Promise<{
         hotel: {
             id: string;
-            name: string;
             createdAt: Date;
             updatedAt: Date;
+            name: string;
             package: string;
             description: string | null;
             address: string | null;
@@ -42,13 +49,13 @@ export declare class BookingsService {
         };
         roomType: {
             id: string;
-            name: string;
             createdAt: Date;
             updatedAt: Date;
+            hotelId: string;
+            name: string;
             description: string | null;
             images: string[];
             amenities: string[];
-            hotelId: string;
             bedConfig: string | null;
             sizeSqm: number | null;
             basePrice: number | null;
@@ -59,12 +66,6 @@ export declare class BookingsService {
         };
     } & {
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
-        userId: string | null;
-        hotelId: string;
-        roomTypeId: string;
-        ratePlanId: string;
         checkIn: Date;
         checkOut: Date;
         guestsAdult: number;
@@ -75,14 +76,20 @@ export declare class BookingsService {
         leadEmail: string;
         leadPhone: string;
         specialRequests: string | null;
-        roomId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        userId: string | null;
+        hotelId: string;
+        roomTypeId: string;
+        ratePlanId: string;
+        roomId: string | null;
     }>;
     createPublicBooking(data: any): Promise<{
         hotel: {
             id: string;
-            name: string;
             createdAt: Date;
             updatedAt: Date;
+            name: string;
             package: string;
             description: string | null;
             address: string | null;
@@ -113,13 +120,13 @@ export declare class BookingsService {
         };
         roomType: {
             id: string;
-            name: string;
             createdAt: Date;
             updatedAt: Date;
+            hotelId: string;
+            name: string;
             description: string | null;
             images: string[];
             amenities: string[];
-            hotelId: string;
             bedConfig: string | null;
             sizeSqm: number | null;
             basePrice: number | null;
@@ -130,12 +137,6 @@ export declare class BookingsService {
         };
     } & {
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
-        userId: string | null;
-        hotelId: string;
-        roomTypeId: string;
-        ratePlanId: string;
         checkIn: Date;
         checkOut: Date;
         guestsAdult: number;
@@ -146,15 +147,21 @@ export declare class BookingsService {
         leadEmail: string;
         leadPhone: string;
         specialRequests: string | null;
-        roomId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        userId: string | null;
+        hotelId: string;
+        roomTypeId: string;
+        ratePlanId: string;
+        roomId: string | null;
     }>;
     getMyBookings(userId: string): Promise<{
         upcoming: ({
             hotel: {
                 id: string;
-                name: string;
                 createdAt: Date;
                 updatedAt: Date;
+                name: string;
                 package: string;
                 description: string | null;
                 address: string | null;
@@ -185,13 +192,13 @@ export declare class BookingsService {
             };
             roomType: {
                 id: string;
-                name: string;
                 createdAt: Date;
                 updatedAt: Date;
+                hotelId: string;
+                name: string;
                 description: string | null;
                 images: string[];
                 amenities: string[];
-                hotelId: string;
                 bedConfig: string | null;
                 sizeSqm: number | null;
                 basePrice: number | null;
@@ -202,35 +209,30 @@ export declare class BookingsService {
             };
             ratePlan: {
                 id: string;
-                name: string;
                 hotelId: string;
                 roomTypeId: string | null;
+                name: string;
                 includesBreakfast: boolean;
+                breakfastPrice: number;
                 cancellationRule: string | null;
                 adultPricePolicy: string | null;
                 childPricePolicy: string | null;
             };
             payment: {
                 id: string;
+                status: string;
                 createdAt: Date;
                 updatedAt: Date;
-                status: string;
-                currency: string;
                 bookingId: string;
                 provider: string;
                 intentId: string | null;
                 chargeId: string | null;
                 amount: number;
+                currency: string;
                 method: string | null;
             };
         } & {
             id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            userId: string | null;
-            hotelId: string;
-            roomTypeId: string;
-            ratePlanId: string;
             checkIn: Date;
             checkOut: Date;
             guestsAdult: number;
@@ -241,14 +243,20 @@ export declare class BookingsService {
             leadEmail: string;
             leadPhone: string;
             specialRequests: string | null;
-            roomId: string;
+            createdAt: Date;
+            updatedAt: Date;
+            userId: string | null;
+            hotelId: string;
+            roomTypeId: string;
+            ratePlanId: string;
+            roomId: string | null;
         })[];
         past: ({
             hotel: {
                 id: string;
-                name: string;
                 createdAt: Date;
                 updatedAt: Date;
+                name: string;
                 package: string;
                 description: string | null;
                 address: string | null;
@@ -279,13 +287,13 @@ export declare class BookingsService {
             };
             roomType: {
                 id: string;
-                name: string;
                 createdAt: Date;
                 updatedAt: Date;
+                hotelId: string;
+                name: string;
                 description: string | null;
                 images: string[];
                 amenities: string[];
-                hotelId: string;
                 bedConfig: string | null;
                 sizeSqm: number | null;
                 basePrice: number | null;
@@ -296,35 +304,30 @@ export declare class BookingsService {
             };
             ratePlan: {
                 id: string;
-                name: string;
                 hotelId: string;
                 roomTypeId: string | null;
+                name: string;
                 includesBreakfast: boolean;
+                breakfastPrice: number;
                 cancellationRule: string | null;
                 adultPricePolicy: string | null;
                 childPricePolicy: string | null;
             };
             payment: {
                 id: string;
+                status: string;
                 createdAt: Date;
                 updatedAt: Date;
-                status: string;
-                currency: string;
                 bookingId: string;
                 provider: string;
                 intentId: string | null;
                 chargeId: string | null;
                 amount: number;
+                currency: string;
                 method: string | null;
             };
         } & {
             id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            userId: string | null;
-            hotelId: string;
-            roomTypeId: string;
-            ratePlanId: string;
             checkIn: Date;
             checkOut: Date;
             guestsAdult: number;
@@ -335,17 +338,17 @@ export declare class BookingsService {
             leadEmail: string;
             leadPhone: string;
             specialRequests: string | null;
-            roomId: string;
+            createdAt: Date;
+            updatedAt: Date;
+            userId: string | null;
+            hotelId: string;
+            roomTypeId: string;
+            ratePlanId: string;
+            roomId: string | null;
         })[];
     }>;
     confirmPayment(bookingId: string): Promise<{
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
-        userId: string | null;
-        hotelId: string;
-        roomTypeId: string;
-        ratePlanId: string;
         checkIn: Date;
         checkOut: Date;
         guestsAdult: number;
@@ -356,16 +359,16 @@ export declare class BookingsService {
         leadEmail: string;
         leadPhone: string;
         specialRequests: string | null;
-        roomId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        userId: string | null;
+        hotelId: string;
+        roomTypeId: string;
+        ratePlanId: string;
+        roomId: string | null;
     }>;
     cancelBooking(bookingId: string, userId?: string): Promise<{
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
-        userId: string | null;
-        hotelId: string;
-        roomTypeId: string;
-        ratePlanId: string;
         checkIn: Date;
         checkOut: Date;
         guestsAdult: number;
@@ -376,16 +379,16 @@ export declare class BookingsService {
         leadEmail: string;
         leadPhone: string;
         specialRequests: string | null;
-        roomId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        userId: string | null;
+        hotelId: string;
+        roomTypeId: string;
+        ratePlanId: string;
+        roomId: string | null;
     }>;
     cancelBookingByAdmin(bookingId: string, hotelId: string): Promise<{
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
-        userId: string | null;
-        hotelId: string;
-        roomTypeId: string;
-        ratePlanId: string;
         checkIn: Date;
         checkOut: Date;
         guestsAdult: number;
@@ -396,7 +399,13 @@ export declare class BookingsService {
         leadEmail: string;
         leadPhone: string;
         specialRequests: string | null;
-        roomId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        userId: string | null;
+        hotelId: string;
+        roomTypeId: string;
+        ratePlanId: string;
+        roomId: string | null;
     }>;
     requestFeedback(id: string): Promise<{
         success: boolean;
@@ -405,9 +414,9 @@ export declare class BookingsService {
     find(id: string): Promise<{
         hotel: {
             id: string;
-            name: string;
             createdAt: Date;
             updatedAt: Date;
+            name: string;
             package: string;
             description: string | null;
             address: string | null;
@@ -438,13 +447,13 @@ export declare class BookingsService {
         };
         roomType: {
             id: string;
-            name: string;
             createdAt: Date;
             updatedAt: Date;
+            hotelId: string;
+            name: string;
             description: string | null;
             images: string[];
             amenities: string[];
-            hotelId: string;
             bedConfig: string | null;
             sizeSqm: number | null;
             basePrice: number | null;
@@ -455,32 +464,33 @@ export declare class BookingsService {
         };
         ratePlan: {
             id: string;
-            name: string;
             hotelId: string;
             roomTypeId: string | null;
+            name: string;
             includesBreakfast: boolean;
+            breakfastPrice: number;
             cancellationRule: string | null;
             adultPricePolicy: string | null;
             childPricePolicy: string | null;
         };
         payment: {
             id: string;
+            status: string;
             createdAt: Date;
             updatedAt: Date;
-            status: string;
-            currency: string;
             bookingId: string;
             provider: string;
             intentId: string | null;
             chargeId: string | null;
             amount: number;
+            currency: string;
             method: string | null;
         };
         guests: {
             id: string;
-            name: string;
             createdAt: Date;
             updatedAt: Date;
+            name: string;
             bookingId: string;
             idType: string;
             idNumber: string | null;
@@ -488,12 +498,6 @@ export declare class BookingsService {
         }[];
     } & {
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
-        userId: string | null;
-        hotelId: string;
-        roomTypeId: string;
-        ratePlanId: string;
         checkIn: Date;
         checkOut: Date;
         guestsAdult: number;
@@ -504,29 +508,35 @@ export declare class BookingsService {
         leadEmail: string;
         leadPhone: string;
         specialRequests: string | null;
-        roomId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        userId: string | null;
+        hotelId: string;
+        roomTypeId: string;
+        ratePlanId: string;
+        roomId: string | null;
     }>;
     findAll(hotelId: string, search?: string, status?: string, sortBy?: string, order?: string, page?: number, limit?: number): Promise<{
         data: ({
             user: {
                 id: string;
+                createdAt: Date;
+                updatedAt: Date;
+                name: string | null;
                 email: string;
                 passwordHash: string;
-                name: string | null;
                 phone: string | null;
                 roles: string[];
                 avatarUrl: string | null;
                 tags: string[];
                 notes: string | null;
                 preferences: string | null;
-                createdAt: Date;
-                updatedAt: Date;
             };
             hotel: {
                 id: string;
-                name: string;
                 createdAt: Date;
                 updatedAt: Date;
+                name: string;
                 package: string;
                 description: string | null;
                 address: string | null;
@@ -557,13 +567,13 @@ export declare class BookingsService {
             };
             roomType: {
                 id: string;
-                name: string;
                 createdAt: Date;
                 updatedAt: Date;
+                hotelId: string;
+                name: string;
                 description: string | null;
                 images: string[];
                 amenities: string[];
-                hotelId: string;
                 bedConfig: string | null;
                 sizeSqm: number | null;
                 basePrice: number | null;
@@ -574,29 +584,29 @@ export declare class BookingsService {
             };
             room: {
                 id: string;
-                roomTypeId: string;
                 status: import(".prisma/client").$Enums.RoomStatus;
+                roomTypeId: string;
                 deletedAt: Date | null;
                 roomNumber: string | null;
             };
             payment: {
                 id: string;
+                status: string;
                 createdAt: Date;
                 updatedAt: Date;
-                status: string;
-                currency: string;
                 bookingId: string;
                 provider: string;
                 intentId: string | null;
                 chargeId: string | null;
                 amount: number;
+                currency: string;
                 method: string | null;
             };
             guests: {
                 id: string;
-                name: string;
                 createdAt: Date;
                 updatedAt: Date;
+                name: string;
                 bookingId: string;
                 idType: string;
                 idNumber: string | null;
@@ -604,12 +614,6 @@ export declare class BookingsService {
             }[];
         } & {
             id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            userId: string | null;
-            hotelId: string;
-            roomTypeId: string;
-            ratePlanId: string;
             checkIn: Date;
             checkOut: Date;
             guestsAdult: number;
@@ -620,7 +624,13 @@ export declare class BookingsService {
             leadEmail: string;
             leadPhone: string;
             specialRequests: string | null;
-            roomId: string;
+            createdAt: Date;
+            updatedAt: Date;
+            userId: string | null;
+            hotelId: string;
+            roomTypeId: string;
+            ratePlanId: string;
+            roomId: string | null;
         })[];
         meta: {
             total: number;
@@ -631,12 +641,6 @@ export declare class BookingsService {
     }>;
     updateStatus(bookingId: string, status: string, hotelId: string, userId?: string, roomId?: string): Promise<{
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
-        userId: string | null;
-        hotelId: string;
-        roomTypeId: string;
-        ratePlanId: string;
         checkIn: Date;
         checkOut: Date;
         guestsAdult: number;
@@ -647,15 +651,15 @@ export declare class BookingsService {
         leadEmail: string;
         leadPhone: string;
         specialRequests: string | null;
-        roomId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        userId: string | null;
+        hotelId: string;
+        roomTypeId: string;
+        ratePlanId: string;
+        roomId: string | null;
     } | [{
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
-        userId: string | null;
-        hotelId: string;
-        roomTypeId: string;
-        ratePlanId: string;
         checkIn: Date;
         checkOut: Date;
         guestsAdult: number;
@@ -666,36 +670,27 @@ export declare class BookingsService {
         leadEmail: string;
         leadPhone: string;
         specialRequests: string | null;
-        roomId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        userId: string | null;
+        hotelId: string;
+        roomTypeId: string;
+        ratePlanId: string;
+        roomId: string | null;
     }, {
         id: string;
-        roomTypeId: string;
         status: import(".prisma/client").$Enums.RoomStatus;
+        roomTypeId: string;
         deletedAt: Date | null;
         roomNumber: string | null;
     }, {
         id: string;
-        createdAt: Date;
         status: import(".prisma/client").$Enums.RoomStatus;
+        createdAt: Date;
         roomId: string;
         updatedBy: string | null;
         note: string | null;
     }]>;
-    getDashboardStats(period?: string): Promise<{
-        totalBookings: number;
-        confirmedBookings: number;
-        totalRevenue: number;
-        chartData: {
-            name: string;
-            value: number;
-        }[];
-        occupancyChart: any[];
-        totalRooms: number;
-        availableRooms: number;
-        checkInsToday: number;
-        checkOutsToday: number;
-        occupancyRate: number;
-    }>;
     getCalendarBookings(hotelId: string, month: number, year: number): Promise<any[]>;
     getCalendarEvents(hotelId: string, start: string, end: string): Promise<{
         roomType: {
@@ -707,19 +702,18 @@ export declare class BookingsService {
         };
         payment: {
             id: string;
+            status: string;
             createdAt: Date;
             updatedAt: Date;
-            status: string;
-            currency: string;
             bookingId: string;
             provider: string;
             intentId: string | null;
             chargeId: string | null;
             amount: number;
+            currency: string;
             method: string | null;
         };
         id: string;
-        roomTypeId: string;
         checkIn: Date;
         checkOut: Date;
         guestsAdult: number;
@@ -729,6 +723,7 @@ export declare class BookingsService {
         leadName: string;
         leadEmail: string;
         leadPhone: string;
+        roomTypeId: string;
         roomId: string;
     }[]>;
     calculateTotalPrice(roomTypeId: string, ratePlanId: string, checkIn: Date, checkOut: Date, promoCode?: string): Promise<number>;
@@ -784,8 +779,8 @@ export declare class BookingsService {
     getAllPlatformBookings(query?: any): Promise<{
         bookings: ({
             user: {
-                email: string;
                 name: string;
+                email: string;
             };
             hotel: {
                 name: string;
@@ -796,12 +791,6 @@ export declare class BookingsService {
             };
         } & {
             id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            userId: string | null;
-            hotelId: string;
-            roomTypeId: string;
-            ratePlanId: string;
             checkIn: Date;
             checkOut: Date;
             guestsAdult: number;
@@ -812,7 +801,13 @@ export declare class BookingsService {
             leadEmail: string;
             leadPhone: string;
             specialRequests: string | null;
-            roomId: string;
+            createdAt: Date;
+            updatedAt: Date;
+            userId: string | null;
+            hotelId: string;
+            roomTypeId: string;
+            ratePlanId: string;
+            roomId: string | null;
         })[];
         meta: {
             totalItems: number;

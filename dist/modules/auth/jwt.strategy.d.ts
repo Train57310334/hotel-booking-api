@@ -1,5 +1,6 @@
 import { Strategy } from 'passport-jwt';
 import { PrismaService } from '../../common/prisma/prisma.service';
+export declare function invalidateUserCache(userId: string): void;
 declare const JwtStrategy_base: new (...args: any[]) => Strategy;
 export declare class JwtStrategy extends JwtStrategy_base {
     private prisma;
@@ -9,13 +10,7 @@ export declare class JwtStrategy extends JwtStrategy_base {
         email: string;
         roles: string[];
         hotelId: string;
-        roleAssignments: {
-            id: string;
-            createdAt: Date;
-            role: string;
-            userId: string;
-            hotelId: string | null;
-        }[];
+        roleAssignments: any[];
     }>;
 }
 export {};

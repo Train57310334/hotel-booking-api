@@ -114,6 +114,17 @@ let BookingsController = class BookingsController {
             throw e;
         }
     }
+    async createDraft(data) {
+        const result = this.svc.saveDraft(data);
+        return { draftId: result.draftId, expiresAt: result.expiresAt };
+    }
+    async getDraft(id) {
+        const data = this.svc.getDraft(id);
+        if (!data) {
+            throw new common_1.NotFoundException('Booking session not found or expired. Please start a new booking.');
+        }
+        return data;
+    }
     async createPublic(data) {
         try {
             return await this.svc.createPublicBooking(data);
@@ -211,6 +222,20 @@ __decorate([
     __metadata("design:paramtypes", [Object, CreateBookingDto]),
     __metadata("design:returntype", Promise)
 ], BookingsController.prototype, "create", null);
+__decorate([
+    (0, common_1.Post)('draft'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], BookingsController.prototype, "createDraft", null);
+__decorate([
+    (0, common_1.Get)('draft/:id'),
+    __param(0, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], BookingsController.prototype, "getDraft", null);
 __decorate([
     (0, common_1.Post)('public'),
     __param(0, (0, common_1.Body)()),
