@@ -91,10 +91,14 @@ export class SearchService {
       }
     });
 
-    // Optional filter by minPrice/maxPrice after computation
+    // Calculate actual minPrice based on RoomType base prices
     const computed = hotels.map(h => {
-      const flatPrices = h.roomTypes.flatMap(rt => rt.rooms.map((r, i) => 1200 + i * 600));
-      const minP = flatPrices.length ? Math.min(...flatPrices) : 0;
+      const validPrices = h.roomTypes
+          .filter(rt => rt.rooms && rt.rooms.length > 0)
+          .map(rt => rt.basePrice || 0)
+          .filter(price => price > 0);
+          
+      const minP = validPrices.length ? Math.min(...validPrices) : 0;
       return { ...h, minPrice: minP };
     });
 

@@ -24,6 +24,7 @@ let NightAuditService = NightAuditService_1 = class NightAuditService {
         try {
             await this.autoMarkNoShow();
             await this.generateDailySnapshot();
+            await this.databaseCleanup();
             this.logger.log('✅ Night Audit Completed Successfully.');
         }
         catch (e) {
@@ -102,6 +103,40 @@ let NightAuditService = NightAuditService_1 = class NightAuditService {
             }
         });
         this.logger.log(`✅ Snapshot Saved: Occupancy=${occupancyRate.toFixed(1)}%, ADR=${adr.toFixed(2)}, RevPAR=${revPar.toFixed(2)}`);
+    }
+    async databaseCleanup() {
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        this.logger.log('🧹 Starting Database Cleanup (Garbage Collection)...');
+        try {
+            const deletedRooms = await this.prisma.room.deleteMany({
+                where: {
+                    deletedAt: { lte: thirtyDaysAgo }
+                }
+            });
+            if (deletedRooms.count > 0)
+                this.logger.log(`Deleted ${deletedRooms.count} old soft-deleted rooms.`);
+            const deletedRoomTypes = await this.prisma.roomType.deleteMany({
+                where: {
+                    deletedAt: { lte: thirtyDaysAgo }
+                }
+            });
+            if (deletedRoomTypes.count > 0)
+                this.logger.log(`Deleted ${deletedRoomTypes.count} old soft-deleted room types.`);
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const deletedDrafts = await this.prisma.bookingDraft.deleteMany({
+                where: {
+                    expiresAt: { lte: yesterday }
+                }
+            });
+            if (deletedDrafts.count > 0)
+                this.logger.log(`Deleted ${deletedDrafts.count} expired booking drafts.`);
+            this.logger.log('✅ Database Cleanup Completed.');
+        }
+        catch (e) {
+            this.logger.error('❌ Database Cleanup Failed', e);
+        }
     }
 };
 exports.NightAuditService = NightAuditService;

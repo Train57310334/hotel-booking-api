@@ -124,13 +124,16 @@ let RatesService = class RatesService {
                 }
             }
         });
+        const overrideMap = new Map();
+        overrides.forEach(o => overrideMap.set(o.date.toISOString().split('T')[0], o.baseRate));
         while (d < checkOut) {
-            const override = overrides.find(o => o.date.getTime() === d.getTime());
-            if (override) {
-                total += override.baseRate;
+            const dateKey = d.toISOString().split('T')[0];
+            if (overrideMap.has(dateKey)) {
+                total += overrideMap.get(dateKey);
             }
             else {
-                total += (roomType.basePrice || 1000);
+                let nightly = roomType.basePrice || 1000;
+                total += nightly;
             }
             d.setDate(d.getDate() + 1);
         }

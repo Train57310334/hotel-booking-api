@@ -18,6 +18,7 @@ export class NightAuditService {
     try {
       await this.autoMarkNoShow();
       await this.generateDailySnapshot();
+      await this.databaseCleanup();
       this.logger.log('✅ Night Audit Completed Successfully.');
     } catch (e) {
       this.logger.error('❌ Night Audit Failed', e);
@@ -140,5 +141,49 @@ export class NightAuditService {
       });
 
       this.logger.log(`✅ Snapshot Saved: Occupancy=${occupancyRate.toFixed(1)}%, ADR=${adr.toFixed(2)}, RevPAR=${revPar.toFixed(2)}`);
+  }
+
+  /**
+   * 3. Clean up soft-deleted records and expired sessions
+   */
+  async databaseCleanup() {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      this.logger.log('🧹 Starting Database Cleanup (Garbage Collection)...');
+
+      try {
+          // 1. Hard delete Rooms that were soft-deleted > 30 days ago
+          const deletedRooms = await this.prisma.room.deleteMany({
+              where: {
+                  deletedAt: { lte: thirtyDaysAgo }
+              }
+          });
+          if (deletedRooms.count > 0) this.logger.log(`Deleted ${deletedRooms.count} old soft-deleted rooms.`);
+
+          // 2. Hard delete RoomTypes that were soft-deleted > 30 days ago 
+          // (Since rooms cascade, rooms are already handled or deleted first)
+          const deletedRoomTypes = await this.prisma.roomType.deleteMany({
+              where: {
+                  deletedAt: { lte: thirtyDaysAgo }
+              }
+          });
+          if (deletedRoomTypes.count > 0) this.logger.log(`Deleted ${deletedRoomTypes.count} old soft-deleted room types.`);
+
+          // 3. Delete Expired BookingDrafts (Session) > 1 day old
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          
+          const deletedDrafts = await this.prisma.bookingDraft.deleteMany({
+              where: {
+                  expiresAt: { lte: yesterday }
+              }
+          });
+          if (deletedDrafts.count > 0) this.logger.log(`Deleted ${deletedDrafts.count} expired booking drafts.`);
+
+          this.logger.log('✅ Database Cleanup Completed.');
+      } catch (e) {
+          this.logger.error('❌ Database Cleanup Failed', e);
+      }
   }
 }

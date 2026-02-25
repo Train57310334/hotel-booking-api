@@ -156,13 +156,19 @@ export class RatesService {
           }
       });
 
+      const overrideMap = new Map<string, number>();
+      overrides.forEach(o => overrideMap.set(o.date.toISOString().split('T')[0], o.baseRate));
+
       while(d < checkOut) {
-          // Check for override
-          const override = overrides.find(o => o.date.getTime() === d.getTime());
-          if (override) {
-              total += override.baseRate;
+          const dateKey = d.toISOString().split('T')[0];
+          
+          if (overrideMap.has(dateKey)) {
+              total += overrideMap.get(dateKey)!;
           } else {
-              total += (roomType.basePrice || 1000); // Default fallback
+              let nightly = roomType.basePrice || 1000;
+              // If we want to be strict, we can query ratePlan.breakfastPrice here, 
+              // but RatesService is a primitive fallback.
+              total += nightly;
           }
           d.setDate(d.getDate() + 1);
       }
