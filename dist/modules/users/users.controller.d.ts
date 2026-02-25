@@ -2,27 +2,35 @@ import { UsersService } from './users.service';
 export declare class UsersController {
     private svc;
     constructor(svc: UsersService);
-    findAll(search?: string, hotelId?: string): Promise<({
-        bookings: {
+    findAll(search?: string, hotelId?: string): Promise<{
+        data: ({
+            bookings: {
+                createdAt: Date;
+            }[];
+            _count: {
+                bookings: number;
+            };
+        } & {
+            id: string;
+            email: string;
+            passwordHash: string;
+            name: string | null;
+            phone: string | null;
+            roles: string[];
+            avatarUrl: string | null;
+            tags: string[];
+            notes: string | null;
+            preferences: string | null;
             createdAt: Date;
-        }[];
-        _count: {
-            bookings: number;
+            updatedAt: Date;
+        })[];
+        meta: {
+            total: number;
+            page: number;
+            last_page: number;
+            limit: number;
         };
-    } & {
-        id: string;
-        email: string;
-        passwordHash: string;
-        name: string | null;
-        phone: string | null;
-        roles: string[];
-        avatarUrl: string | null;
-        tags: string[];
-        notes: string | null;
-        preferences: string | null;
-        createdAt: Date;
-        updatedAt: Date;
-    })[]>;
+    }>;
     me(req: any): Promise<{
         id: string;
         email: string;

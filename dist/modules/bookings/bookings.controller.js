@@ -84,9 +84,11 @@ __decorate([
     (0, class_validator_1.IsNumber)(),
     __metadata("design:type", Number)
 ], CreateBookingDto.prototype, "totalAmount", void 0);
+const jwt_1 = require("@nestjs/jwt");
 let BookingsController = class BookingsController {
-    constructor(svc) {
+    constructor(svc, jwtService) {
         this.svc = svc;
+        this.jwtService = jwtService;
     }
     async create(req, dto) {
         let userId = null;
@@ -94,13 +96,10 @@ let BookingsController = class BookingsController {
             const authHeader = req.headers.authorization;
             if (authHeader && authHeader.startsWith('Bearer ')) {
                 const token = authHeader.split(' ')[1];
-                const base64Url = token.split('.')[1];
-                const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-                const jsonPayload = decodeURIComponent(atob(base64).split('').map(function (c) {
-                    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-                }).join(''));
-                const payload = JSON.parse(jsonPayload);
-                userId = payload.userId || payload.sub;
+                const payload = this.jwtService.decode(token);
+                if (payload) {
+                    userId = payload.userId || payload.sub;
+                }
             }
         }
         catch (e) {
@@ -115,11 +114,11 @@ let BookingsController = class BookingsController {
         }
     }
     async createDraft(data) {
-        const result = this.svc.saveDraft(data);
+        const result = await this.svc.saveDraft(data);
         return { draftId: result.draftId, expiresAt: result.expiresAt };
     }
     async getDraft(id) {
-        const data = this.svc.getDraft(id);
+        const data = await this.svc.getDraft(id);
         if (!data) {
             throw new common_1.NotFoundException('Booking session not found or expired. Please start a new booking.');
         }
@@ -146,12 +145,10 @@ let BookingsController = class BookingsController {
             }
             try {
                 const token = authHeader.split(' ')[1];
-                const base64Url = token.split('.')[1];
-                const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-                const jsonPayload = decodeURIComponent(atob(base64).split('').map(function (c) {
-                    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-                }).join(''));
-                const payload = JSON.parse(jsonPayload);
+                const payload = this.jwtService.decode(token);
+                if (!payload) {
+                    throw new common_1.ForbiddenException('Invalid token');
+                }
                 const requestUserId = payload.userId || payload.sub;
                 if (booking.userId !== requestUserId) {
                     throw new common_1.ForbiddenException('Unauthorized access to this booking');
@@ -370,6 +367,7 @@ __decorate([
 exports.BookingsController = BookingsController = __decorate([
     (0, swagger_1.ApiTags)('bookings'),
     (0, common_1.Controller)('bookings'),
-    __metadata("design:paramtypes", [bookings_service_1.BookingsService])
+    __metadata("design:paramtypes", [bookings_service_1.BookingsService,
+        jwt_1.JwtService])
 ], BookingsController);
 //# sourceMappingURL=bookings.controller.js.map

@@ -34,7 +34,7 @@ export declare class InventoryService {
         stopSale: boolean;
         minStay: number;
     }[]>;
-    reduceInventory(roomTypeId: string, dateRange: Date[]): Promise<void>;
+    reduceInventory(roomTypeId: string, dateRange: Date[], tx?: any): Promise<void>;
     checkAvailability(roomTypeId: string, startDate: string, endDate: string): Promise<boolean>;
 }
 //# sourceMappingURL=inventory.service.d.ts.map

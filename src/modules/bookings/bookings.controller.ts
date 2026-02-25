@@ -70,10 +70,15 @@ class CreateBookingDto {
   totalAmount?: number;
 }
 
+import { JwtService } from '@nestjs/jwt';
+
 @ApiTags('bookings')
 @Controller('bookings')
 export class BookingsController {
-  constructor(private svc: BookingsService) {}
+  constructor(
+    private svc: BookingsService,
+    private jwtService: JwtService
+  ) {}
 
   /**
    * 🏨 สร้างการจองใหม่ (Guest Allowed)
@@ -85,18 +90,11 @@ export class BookingsController {
         const authHeader = req.headers.authorization;
         if (authHeader && authHeader.startsWith('Bearer ')) {
             const token = authHeader.split(' ')[1];
-            // Simple decode without verifying signature again (Guard does verification, but here we just want ID if valid-ish)
-            // Or better: Use JwtService if available. 
-            // Since we don't have JwtService injected, we'll do a quick parse or rely on client.
-            // Actually, let's inject JwtService properly.
-            // For now, let's just parse the payload base64.
-            const base64Url = token.split('.')[1];
-            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-            }).join(''));
-            const payload = JSON.parse(jsonPayload);
-            userId = payload.userId || payload.sub; // Adjust based on your JWT structure
+            // Decode without verification (Guard handles auth, we just want to extract identity for guest fallback)
+            const payload = this.jwtService.decode(token) as any;
+            if (payload) {
+                userId = payload.userId || payload.sub; // Adjust based on your JWT structure
+            }
         }
     } catch (e) {
         console.warn('Failed to parse token in create:', e);
@@ -117,7 +115,7 @@ export class BookingsController {
    */
   @Post('draft')
   async createDraft(@Body() data: any) {
-    const result = this.svc.saveDraft(data);
+    const result = await this.svc.saveDraft(data);
     return { draftId: result.draftId, expiresAt: result.expiresAt };
   }
 
@@ -127,7 +125,7 @@ export class BookingsController {
    */
   @Get('draft/:id')
   async getDraft(@Param('id') id: string) {
-    const data = this.svc.getDraft(id);
+    const data = await this.svc.getDraft(id);
     if (!data) {
       throw new NotFoundException('Booking session not found or expired. Please start a new booking.');
     }
@@ -179,12 +177,10 @@ export class BookingsController {
         // NOTE: In a real app we would use a PassiveAuthGuard, but here we duplicate the simple decode for speed/fix
         try {
             const token = authHeader.split(' ')[1];
-            const base64Url = token.split('.')[1];
-            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-            }).join(''));
-            const payload = JSON.parse(jsonPayload);
+            const payload = this.jwtService.decode(token) as any;
+            if (!payload) {
+                 throw new ForbiddenException('Invalid token');
+            }
             const requestUserId = payload.userId || payload.sub;
 
             if (booking.userId !== requestUserId) {

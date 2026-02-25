@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/common/prisma/prisma.service';
 
 @Injectable()
@@ -168,11 +168,16 @@ export class RoomsService {
       });
     }
 
-    // Using createMany for better performance
-    return this.prisma.room.createMany({
-      data: roomsToCreate,
-      skipDuplicates: true, // Safety skip
-    });
+    try {
+      // Using createMany for better performance
+      return await this.prisma.room.createMany({
+        data: roomsToCreate,
+        skipDuplicates: true, // Safety skip
+      });
+    } catch (error) {
+       console.error("Bulk Room Creation Error:", error);
+       throw new BadRequestException("Failed to create rooms. Some room numbers may already exist.");
+    }
   }
 
   async findOne(id: string) {

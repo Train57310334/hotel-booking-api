@@ -461,3 +461,16 @@ model SubscriptionPlan {
   updatedAt       DateTime @updatedAt
 }
 
+//
+// ─── BOOKING DRAFT (SESSION) ────────────────────────────────────────────
+//
+
+model BookingDraft {
+  id        String   @id @default(cuid())
+  data      Json
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+

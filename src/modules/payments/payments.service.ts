@@ -209,16 +209,25 @@ export class PaymentsService {
         // CASE 1: Booking Payment
         if (metadata.bookingId) {
             const bookingId = metadata.bookingId;
-            // 1. Update Booking Status
-            const updatedBooking = await this.prisma.booking.update({
-                where: { id: bookingId },
-                data: { status: 'confirmed' }, 
-                include: { 
-                    hotel: true, 
-                    roomType: true, 
-                    guests: true,
-                    payment: true
-                }
+            
+            // 💡 IDEMPOTENCY CHECK & ATOMIC UPDATE
+            // Only update booking if it's NOT already confirmed
+            const updateResult = await this.prisma.booking.updateMany({
+                 where: { id: bookingId, status: { not: 'confirmed' } },
+                 data: { status: 'confirmed' }
+            });
+
+            if (updateResult.count === 0) {
+                 // It was ALREADY confirmed. This means another webhook processed it perfectly.
+                 console.log(`Booking ${bookingId} already confirmed. Skipping duplicate Webhook for Intent ${paymentIntent.id}`);
+                 return { received: true };
+            }
+
+            // If we get here, WE were the ones to confirm it.
+            // Fetch the updated booking for the email:
+            const updatedBooking = await this.prisma.booking.findUnique({
+                 where: { id: bookingId },
+                 include: { hotel: true, roomType: true, guests: true, payment: true }
             });
 
             // 2. Update Payment Record to Captured
@@ -240,10 +249,12 @@ export class PaymentsService {
             });
 
             // 3. Send Email Notification
-            try {
-                 await this.notificationsService.sendPaymentSuccessEmail(updatedBooking);
-            } catch (emailErr) {
-                console.error('Failed to send payment success email', emailErr);
+            if (updatedBooking) {
+                try {
+                     await this.notificationsService.sendPaymentSuccessEmail(updatedBooking as any);
+                } catch (emailErr) {
+                    console.error('Failed to send payment success email', emailErr);
+                }
             }
         }
 

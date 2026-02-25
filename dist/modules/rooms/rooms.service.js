@@ -141,10 +141,16 @@ let RoomsService = class RoomsService {
                 roomNumber: `${prefix}${startNumber + i}`,
             });
         }
-        return this.prisma.room.createMany({
-            data: roomsToCreate,
-            skipDuplicates: true,
-        });
+        try {
+            return await this.prisma.room.createMany({
+                data: roomsToCreate,
+                skipDuplicates: true,
+            });
+        }
+        catch (error) {
+            console.error("Bulk Room Creation Error:", error);
+            throw new common_1.BadRequestException("Failed to create rooms. Some room numbers may already exist.");
+        }
     }
     async findOne(id) {
         const room = await this.prisma.room.findFirst({

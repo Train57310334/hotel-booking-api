@@ -56,7 +56,7 @@ let UsersService = class UsersService {
     findByEmail(email) {
         return this.prisma.user.findUnique({ where: { email } });
     }
-    async findAll(search, hotelId) {
+    async findAll(search, hotelId, page = 1, limit = 20) {
         const where = {};
         if (search) {
             where.OR = [
@@ -68,21 +68,37 @@ let UsersService = class UsersService {
         if (hotelId) {
             where.bookings = { some: { hotelId } };
         }
-        return this.prisma.user.findMany({
-            where,
-            include: {
-                _count: {
-                    select: { bookings: { where: hotelId ? { hotelId } : {} } }
+        const pageNum = Math.max(1, Number(page) || 1);
+        const limitNum = Math.max(1, Number(limit) || 20);
+        const [data, total] = await Promise.all([
+            this.prisma.user.findMany({
+                where,
+                include: {
+                    _count: {
+                        select: { bookings: { where: hotelId ? { hotelId } : {} } }
+                    },
+                    bookings: {
+                        where: hotelId ? { hotelId } : {},
+                        take: 1,
+                        orderBy: { createdAt: 'desc' },
+                        select: { createdAt: true }
+                    }
                 },
-                bookings: {
-                    where: hotelId ? { hotelId } : {},
-                    take: 1,
-                    orderBy: { createdAt: 'desc' },
-                    select: { createdAt: true }
-                }
-            },
-            orderBy: { createdAt: 'desc' }
-        });
+                orderBy: { createdAt: 'desc' },
+                skip: (pageNum - 1) * limitNum,
+                take: limitNum,
+            }),
+            this.prisma.user.count({ where })
+        ]);
+        return {
+            data,
+            meta: {
+                total,
+                page: pageNum,
+                last_page: Math.ceil(total / limitNum),
+                limit: limitNum
+            }
+        };
     }
     me(id) {
         return this.prisma.user.findUnique({ where: { id } });
@@ -100,10 +116,10 @@ let UsersService = class UsersService {
         });
     }
     update(id, data) {
-        const { password, ...updates } = data;
+        const { passwordHash, password, roles, roleAssignments, ...safeUpdates } = data;
         return this.prisma.user.update({
             where: { id },
-            data: updates
+            data: safeUpdates
         });
     }
     async changePassword(userId, oldPass, newPass) {

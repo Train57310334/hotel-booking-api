@@ -91,11 +91,22 @@ export class RoomTypesService {
     }
   }
 
-  remove(id: string) { 
-      // Soft Delete
-      return this.prisma.roomType.update({ 
-          where: { id }, 
-          data: { deletedAt: new Date() } 
-      }); 
+  async remove(id: string) { 
+      // Soft Delete: Cascade to rooms as well
+      return this.prisma.$transaction(async (tx) => {
+          // 1. Soft delete the room type
+          const roomType = await tx.roomType.update({ 
+              where: { id }, 
+              data: { deletedAt: new Date() } 
+          }); 
+
+          // 2. Soft delete all rooms under this room type
+          await tx.room.updateMany({
+              where: { roomTypeId: id, deletedAt: null },
+              data: { deletedAt: new Date() }
+          });
+
+          return roomType;
+      });
   }
 }
