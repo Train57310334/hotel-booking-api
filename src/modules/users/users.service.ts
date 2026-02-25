@@ -14,7 +14,7 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { email } });
   }
 
-  async findAll(search?: string, hotelId?: string) {
+  async findAll(search?: string, hotelId?: string, page: number = 1, limit: number = 20) {
     const where: any = {};
     
     if (search) {
@@ -29,22 +29,39 @@ export class UsersService {
        where.bookings = { some: { hotelId } };
     }
 
-    // Filter count and last booking based on hotelId too
-    return this.prisma.user.findMany({
-      where,
-      include: {
-        _count: { 
-            select: { bookings: { where: hotelId ? { hotelId } : {} } } 
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limitNum = Math.max(1, Number(limit) || 20);
+
+    const [data, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        include: {
+          _count: { 
+              select: { bookings: { where: hotelId ? { hotelId } : {} } } 
+          },
+          bookings: {
+             where: hotelId ? { hotelId } : {},
+             take: 1,
+             orderBy: { createdAt: 'desc' },
+             select: { createdAt: true }
+          }
         },
-        bookings: {
-           where: hotelId ? { hotelId } : {},
-           take: 1,
-           orderBy: { createdAt: 'desc' },
-           select: { createdAt: true }
+        orderBy: { createdAt: 'desc' },
+        skip: (pageNum - 1) * limitNum,
+        take: limitNum,
+      }),
+      this.prisma.user.count({ where })
+    ]);
+
+    return {
+        data,
+        meta: {
+            total,
+            page: pageNum,
+            last_page: Math.ceil(total / limitNum),
+            limit: limitNum
         }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
+    };
   }
 
   me(id: string) {
@@ -65,11 +82,12 @@ export class UsersService {
   }
 
   update(id: string, data: any) {
-    // Remove sensitive fields if any or strict DTO
-    const { password, ...updates } = data; 
+    // SECURITY: Prevent privilege escalation. Roles & Passwords must be handled by specific endpoints.
+    const { passwordHash, password, roles, roleAssignments, ...safeUpdates } = data; 
+    
     return this.prisma.user.update({
       where: { id },
-      data: updates
+      data: safeUpdates
     });
   }
 

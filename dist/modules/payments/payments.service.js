@@ -192,15 +192,17 @@ let PaymentsService = class PaymentsService {
             console.log(`💰 Payment Succeeded: ${paymentIntent.id}`, metadata);
             if (metadata.bookingId) {
                 const bookingId = metadata.bookingId;
-                const updatedBooking = await this.prisma.booking.update({
+                const updateResult = await this.prisma.booking.updateMany({
+                    where: { id: bookingId, status: { not: 'confirmed' } },
+                    data: { status: 'confirmed' }
+                });
+                if (updateResult.count === 0) {
+                    console.log(`Booking ${bookingId} already confirmed. Skipping duplicate Webhook for Intent ${paymentIntent.id}`);
+                    return { received: true };
+                }
+                const updatedBooking = await this.prisma.booking.findUnique({
                     where: { id: bookingId },
-                    data: { status: 'confirmed' },
-                    include: {
-                        hotel: true,
-                        roomType: true,
-                        guests: true,
-                        payment: true
-                    }
+                    include: { hotel: true, roomType: true, guests: true, payment: true }
                 });
                 await this.prisma.payment.upsert({
                     where: { bookingId },
@@ -218,11 +220,13 @@ let PaymentsService = class PaymentsService {
                         method: 'card'
                     }
                 });
-                try {
-                    await this.notificationsService.sendPaymentSuccessEmail(updatedBooking);
-                }
-                catch (emailErr) {
-                    console.error('Failed to send payment success email', emailErr);
+                if (updatedBooking) {
+                    try {
+                        await this.notificationsService.sendPaymentSuccessEmail(updatedBooking);
+                    }
+                    catch (emailErr) {
+                        console.error('Failed to send payment success email', emailErr);
+                    }
                 }
             }
             if (metadata.type === 'upgrade' && metadata.hotelId) {

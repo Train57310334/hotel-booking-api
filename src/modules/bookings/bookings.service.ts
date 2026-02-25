@@ -14,34 +14,37 @@ export class BookingsService {
     private inventoryService: InventoryService,
   ) {}
 
-  // ─── BOOKING DRAFT STORE (In-Memory, 15-min TTL) ─────────────────────────
+  // ─── BOOKING DRAFT STORE (Database backed, 15-min TTL) ─────────────────────────
   // Allows payment page to recover booking payload if localStorage is cleared.
-  // Keyed by UUID, auto-expired to prevent memory leaks.
-  private draftStore = new Map<string, { data: any; expiresAt: Date }>();
-
-  saveDraft(data: any): { draftId: string; expiresAt: Date } {
-    const draftId = randomUUID();
+  
+  async saveDraft(data: any): Promise<{ draftId: string; expiresAt: Date }> {
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
-    this.draftStore.set(draftId, { data, expiresAt });
-    return { draftId, expiresAt };
+    const draft = await this.prisma.bookingDraft.create({
+       data: {
+          data,
+          expiresAt
+       }
+    });
+    return { draftId: draft.id, expiresAt };
   }
 
-  getDraft(draftId: string): any | null {
-    const draft = this.draftStore.get(draftId);
+  async getDraft(draftId: string): Promise<any | null> {
+    const draft = await this.prisma.bookingDraft.findUnique({ where: { id: draftId } });
     if (!draft) return null;
     if (new Date() > draft.expiresAt) {
-      this.draftStore.delete(draftId);
+      await this.prisma.bookingDraft.delete({ where: { id: draftId } });
       return null;
     }
     return draft.data;
   }
 
   @Cron('0 */5 * * * *') // Every 5 minutes
-  cleanExpiredDrafts() {
-    const now = new Date();
-    for (const [key, draft] of this.draftStore.entries()) {
-      if (now > draft.expiresAt) this.draftStore.delete(key);
-    }
+  async cleanExpiredDrafts() {
+    await this.prisma.bookingDraft.deleteMany({
+       where: {
+          expiresAt: { lt: new Date() }
+       }
+    });
   }
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -75,30 +78,30 @@ export class BookingsService {
 
       // 2.1 Auto-assign Room if not provided
       if (!data.roomId) {
-          // Find all rooms of this type
-          const rooms = await this.prisma.room.findMany({
-              where: { roomTypeId: data.roomTypeId }
+          const conflictingBookings = await this.prisma.booking.findMany({
+              where: {
+                  roomTypeId: data.roomTypeId,
+                  roomId: { not: null },
+                  status: { not: 'cancelled' },
+                  checkIn: { lt: checkOutDate },
+                  checkOut: { gt: checkInDate }
+              },
+              select: { roomId: true }
           });
-          
-          // Find one that is NOT booked during these dates
-          for (const room of rooms) {
-              const conflict = await this.prisma.booking.findFirst({
-                  where: {
-                      roomId: room.id,
-                      status: { not: 'cancelled' },
-                      checkIn: { lt: checkOutDate },
-                      checkOut: { gt: checkInDate }
-                  }
-              });
-              if (!conflict) {
-                  data.roomId = room.id;
-                  break;
-              }
-          }
+          const conflictingRoomIds = conflictingBookings.map(b => b.roomId).filter((id): id is string => id !== null);
 
-          if (!data.roomId) {
+          const availableRoom = await this.prisma.room.findFirst({
+              where: {
+                  roomTypeId: data.roomTypeId,
+                  deletedAt: null,
+                  ...(conflictingRoomIds.length > 0 ? { id: { notIn: conflictingRoomIds } } : {})
+              }
+          });
+
+          if (!availableRoom) {
              throw new NotFoundException('No specific room available for assignment (unexpected inventory mismatch)');
           }
+          data.roomId = availableRoom.id;
       }
 
       // 3. Price Validation & Calculation
@@ -166,7 +169,7 @@ export class BookingsService {
           d.setDate(d.getDate() + 1);
         }
 
-        await this.inventoryService.reduceInventory(data.roomTypeId, dateRange);
+        await this.inventoryService.reduceInventory(data.roomTypeId, dateRange, tx);
         return newBooking;
       });
 
@@ -205,12 +208,13 @@ export class BookingsService {
               d.setDate(d.getDate() + 1);
            }
 
+           const totalRooms = await tx.room.count({ where: { roomTypeId: roomOpt.roomTypeId, deletedAt: null } });
            for (const date of dateRange) {
               const inv = await tx.inventoryCalendar.findFirst({
                  where: { roomTypeId: roomOpt.roomTypeId, date }
               });
               
-              const available = inv ? inv.allotment : 0;
+              const available = inv ? inv.allotment : totalRooms;
               if (available < roomOpt.quantity) {
                  throw new ConflictException(`Insufficient inventory for Room Type ${roomOpt.roomTypeId} on ${date.toISOString().split('T')[0]}`);
               }
@@ -319,7 +323,21 @@ export class BookingsService {
                if (inv) {
                    await tx.inventoryCalendar.update({
                       where: { id: inv.id },
-                      data: { allotment: Math.max(0, inv.allotment - roomOpt.quantity) }
+                      data: { allotment: { decrement: roomOpt.quantity } }
+                   });
+               } else {
+                   const totalRooms = await tx.room.count({ where: { roomTypeId: roomOpt.roomTypeId, deletedAt: null } });
+                   if (totalRooms < roomOpt.quantity) {
+                       throw new ConflictException(`Insufficient physical rooms for Room Type ${roomOpt.roomTypeId}`);
+                   }
+                   await tx.inventoryCalendar.create({
+                       data: {
+                           roomTypeId: roomOpt.roomTypeId,
+                           date,
+                           allotment: totalRooms - roomOpt.quantity,
+                           stopSale: false,
+                           minStay: 1
+                       }
                    });
                }
             }
@@ -644,10 +662,10 @@ export class BookingsService {
               total += overrideMap.get(dateKey);
           } else {
               let nightly = roomType.basePrice || 0;
-              // Simple logic for Bed & Breakfast adjustment if not overridden
-              // Based on seed: "standard + 300"
-              if (ratePlan.includesBreakfast && !ratePlan.name.toLowerCase().includes('standard')) {
-                  nightly += 300; 
+              // Use configured breakfast price if available
+              const rp = ratePlan as any;
+              if (rp.includesBreakfast && rp.breakfastPrice > 0) {
+                  nightly += rp.breakfastPrice; 
               }
               total += nightly;
           }

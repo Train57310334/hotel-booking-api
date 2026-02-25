@@ -89,14 +89,15 @@ export class InventoryService {
     return this.prisma.$transaction(operations);
   }
 
-  async reduceInventory(roomTypeId: string, dateRange: Date[]) {
+  async reduceInventory(roomTypeId: string, dateRange: Date[], tx?: any) {
+    const prisma = tx || this.prisma;
     // 1. Get total physical rooms count to use as default base if inventory doesn't exist
-    const totalRooms = await this.prisma.room.count({
+    const totalRooms = await prisma.room.count({
       where: { roomTypeId, deletedAt: null }
     });
 
     for (const date of dateRange) {
-      const record = await this.prisma.inventoryCalendar.findUnique({
+      const record = await prisma.inventoryCalendar.findUnique({
         where: { roomTypeId_date: { roomTypeId, date } },
       });
 
@@ -104,16 +105,16 @@ export class InventoryService {
         if (record.allotment <= 0) {
            throw new NotFoundException(`No inventory available for ${date.toDateString()}`);
         }
-        await this.prisma.inventoryCalendar.update({
+        await prisma.inventoryCalendar.update({
           where: { roomTypeId_date: { roomTypeId, date } },
-          data: { allotment: record.allotment - 1 },
+          data: { allotment: { decrement: 1 } },
         });
       } else {
         // Record doesn't exist, assume full availability (totalRooms) minus 1
         if (totalRooms <= 0) {
            throw new NotFoundException(`No physical rooms found for this Room Type, and no inventory set.`);
         }
-        await this.prisma.inventoryCalendar.create({
+        await prisma.inventoryCalendar.create({
           data: {
             roomTypeId,
             date,

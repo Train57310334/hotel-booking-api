@@ -139,7 +139,7 @@ export declare class RoomTypesController {
         isFeatured: boolean;
         deletedAt: Date | null;
     }>;
-    remove(id: string): import(".prisma/client").Prisma.Prisma__RoomTypeClient<{
+    remove(id: string): Promise<{
         id: string;
         name: string;
         createdAt: Date;
@@ -155,6 +155,6 @@ export declare class RoomTypesController {
         maxChildren: number;
         isFeatured: boolean;
         deletedAt: Date | null;
-    }, never, import("@prisma/client/runtime/library").DefaultArgs>;
+    }>;
 }
 //# sourceMappingURL=room-types.controller.d.ts.map

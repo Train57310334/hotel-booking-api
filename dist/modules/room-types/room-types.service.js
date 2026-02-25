@@ -94,10 +94,17 @@ let RoomTypesService = class RoomTypesService {
             throw new common_1.BadRequestException(e.message);
         }
     }
-    remove(id) {
-        return this.prisma.roomType.update({
-            where: { id },
-            data: { deletedAt: new Date() }
+    async remove(id) {
+        return this.prisma.$transaction(async (tx) => {
+            const roomType = await tx.roomType.update({
+                where: { id },
+                data: { deletedAt: new Date() }
+            });
+            await tx.room.updateMany({
+                where: { roomTypeId: id, deletedAt: null },
+                data: { deletedAt: new Date() }
+            });
+            return roomType;
         });
     }
 };
