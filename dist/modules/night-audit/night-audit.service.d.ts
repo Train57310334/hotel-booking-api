@@ -6,5 +6,6 @@ export declare class NightAuditService {
     handleNightAudit(): Promise<void>;
     autoMarkNoShow(): Promise<void>;
     generateDailySnapshot(): Promise<void>;
+    databaseCleanup(): Promise<void>;
 }
 //# sourceMappingURL=night-audit.service.d.ts.map

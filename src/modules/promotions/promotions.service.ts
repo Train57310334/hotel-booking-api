@@ -71,11 +71,17 @@ export class PromotionsService {
 
   async validateCode(code: string, purchaseAmount: number) {
     const promo = await this.prisma.promotion.findUnique({
-      where: { code }
+      where: { code },
+      include: { hotel: true }
     });
 
     if (!promo) {
       throw new NotFoundException('Invalid promo code');
+    }
+
+    // Check if the hotel still has the right to use promotions (in case of downgrade)
+    if (promo.hotel && !promo.hotel.hasPromotions) {
+      throw new BadRequestException('This promotion code is no longer active due to hotel subscription changes.');
     }
 
     const now = new Date();

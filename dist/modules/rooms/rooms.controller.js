@@ -16,6 +16,8 @@ exports.RoomsController = void 0;
 const common_1 = require("@nestjs/common");
 const rooms_service_1 = require("./rooms.service");
 const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
+const permissions_guard_1 = require("../auth/guards/permissions.guard");
+const permissions_decorator_1 = require("../auth/decorators/permissions.decorator");
 const swagger_1 = require("@nestjs/swagger");
 let RoomsController = class RoomsController {
     constructor(roomsService) {
@@ -49,6 +51,7 @@ let RoomsController = class RoomsController {
 exports.RoomsController = RoomsController;
 __decorate([
     (0, common_1.Get)(),
+    (0, permissions_decorator_1.Permissions)('read:rooms'),
     __param(0, (0, common_1.Query)('search')),
     __param(1, (0, common_1.Query)('hotelId')),
     __metadata("design:type", Function),
@@ -57,6 +60,7 @@ __decorate([
 ], RoomsController.prototype, "findAll", null);
 __decorate([
     (0, common_1.Get)('available'),
+    (0, permissions_decorator_1.Permissions)('read:rooms'),
     __param(0, (0, common_1.Query)('roomTypeId')),
     __param(1, (0, common_1.Query)('checkIn')),
     __param(2, (0, common_1.Query)('checkOut')),
@@ -66,6 +70,7 @@ __decorate([
 ], RoomsController.prototype, "getAvailable", null);
 __decorate([
     (0, common_1.Post)(),
+    (0, permissions_decorator_1.Permissions)('manage:rooms'),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -73,6 +78,7 @@ __decorate([
 ], RoomsController.prototype, "create", null);
 __decorate([
     (0, common_1.Post)('bulk'),
+    (0, permissions_decorator_1.Permissions)('manage:rooms'),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -80,6 +86,7 @@ __decorate([
 ], RoomsController.prototype, "createBulk", null);
 __decorate([
     (0, common_1.Get)(':id'),
+    (0, permissions_decorator_1.Permissions)('read:rooms'),
     __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
@@ -87,6 +94,7 @@ __decorate([
 ], RoomsController.prototype, "findOne", null);
 __decorate([
     (0, common_1.Put)(':id'),
+    (0, permissions_decorator_1.Permissions)('manage:rooms'),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -95,6 +103,7 @@ __decorate([
 ], RoomsController.prototype, "update", null);
 __decorate([
     (0, common_1.Delete)(':id'),
+    (0, permissions_decorator_1.Permissions)('manage:rooms'),
     __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
@@ -102,6 +111,7 @@ __decorate([
 ], RoomsController.prototype, "remove", null);
 __decorate([
     (0, common_1.Put)(':id/status'),
+    (0, permissions_decorator_1.Permissions)('update:room_status'),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, common_1.Request)()),
@@ -112,7 +122,7 @@ __decorate([
 exports.RoomsController = RoomsController = __decorate([
     (0, swagger_1.ApiTags)('rooms'),
     (0, common_1.Controller)('rooms'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, permissions_guard_1.PermissionsGuard),
     __metadata("design:paramtypes", [rooms_service_1.RoomsService])
 ], RoomsController);
 //# sourceMappingURL=rooms.controller.js.map
