@@ -40,6 +40,14 @@ let PaymentsController = class PaymentsController {
             throw new Error('Amount and Token are required');
         return this.svc.createOmiseCharge(body.amount, body.token, body.description);
     }
+    async omisePromptPay(body) {
+        if (!body.amount || !body.bookingId)
+            throw new Error('Amount and BookingId are required');
+        return this.svc.createOmisePromptPaySource(body.amount, body.bookingId, body.description);
+    }
+    async omiseWebhook(payload) {
+        return this.svc.handleOmiseWebhook(payload);
+    }
     capture(bookingId) {
         return { bookingId, status: 'captured' };
     }
@@ -95,6 +103,20 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], PaymentsController.prototype, "omiseCharge", null);
+__decorate([
+    (0, common_1.Post)('omise/promptpay'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], PaymentsController.prototype, "omisePromptPay", null);
+__decorate([
+    (0, common_1.Post)('omise/webhook'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], PaymentsController.prototype, "omiseWebhook", null);
 __decorate([
     (0, common_1.Post)(':bookingId/capture'),
     __param(0, (0, common_1.Param)('bookingId')),

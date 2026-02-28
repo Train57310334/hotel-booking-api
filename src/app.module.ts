@@ -34,6 +34,10 @@ import { NightAuditModule } from './modules/night-audit/night-audit.module';
 import { FolioModule } from './modules/folio/folio.module';
 import { DownloadsModule } from './modules/downloads/downloads.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
+import { IcalModule } from './modules/ical/ical.module';
+import { HousekeepingModule } from './modules/housekeeping/housekeeping.module';
+import { ChannelsModule } from './modules/channels/channels.module';
+import { EventsModule } from './modules/events/events.module';
 
 @Module({
   imports: [
@@ -67,6 +71,10 @@ import { SubscriptionsModule } from './modules/subscriptions/subscriptions.modul
     FolioModule,
     DownloadsModule,
     SubscriptionsModule,
+    IcalModule,
+    HousekeepingModule,
+    ChannelsModule,
+    EventsModule,
   ],
   providers: [PrismaService],
 })

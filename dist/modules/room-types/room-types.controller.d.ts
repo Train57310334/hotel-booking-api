@@ -69,6 +69,7 @@ export declare class RoomTypesController {
         maxAdults: number;
         maxChildren: number;
         isFeatured: boolean;
+        icalUrl: string | null;
         deletedAt: Date | null;
     })[]>;
     byHotel(hotelId: string): import(".prisma/client").Prisma.PrismaPromise<{
@@ -86,6 +87,7 @@ export declare class RoomTypesController {
         maxAdults: number;
         maxChildren: number;
         isFeatured: boolean;
+        icalUrl: string | null;
         deletedAt: Date | null;
     }[]>;
     findOne(id: string): import(".prisma/client").Prisma.Prisma__RoomTypeClient<{
@@ -103,6 +105,7 @@ export declare class RoomTypesController {
         maxAdults: number;
         maxChildren: number;
         isFeatured: boolean;
+        icalUrl: string | null;
         deletedAt: Date | null;
     }, null, import("@prisma/client/runtime/library").DefaultArgs>;
     create(body: any): Promise<{
@@ -120,6 +123,7 @@ export declare class RoomTypesController {
         maxAdults: number;
         maxChildren: number;
         isFeatured: boolean;
+        icalUrl: string | null;
         deletedAt: Date | null;
     }>;
     update(id: string, body: any): Promise<{
@@ -137,6 +141,7 @@ export declare class RoomTypesController {
         maxAdults: number;
         maxChildren: number;
         isFeatured: boolean;
+        icalUrl: string | null;
         deletedAt: Date | null;
     }>;
     remove(id: string): Promise<{
@@ -154,6 +159,7 @@ export declare class RoomTypesController {
         maxAdults: number;
         maxChildren: number;
         isFeatured: boolean;
+        icalUrl: string | null;
         deletedAt: Date | null;
     }>;
 }

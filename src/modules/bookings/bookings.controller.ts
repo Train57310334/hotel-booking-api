@@ -10,6 +10,7 @@ import {
   ForbiddenException,
   NotFoundException,
   Query,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { BookingsService } from './bookings.service';
@@ -136,13 +137,47 @@ export class BookingsController {
    * 🛒 สร้างการจองผ่าน Public Booking Engine
    */
   @Post('public')
-  async createPublic(@Body() data: any) {
+  async createPublic(@Req() req, @Body() data: any) {
+    let userId = null;
     try {
-      return await this.svc.createPublicBooking(data);
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const token = authHeader.split(' ')[1];
+            const payload = this.jwtService.decode(token) as any;
+            if (payload) {
+                userId = payload.userId || payload.sub;
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to parse token in createPublic:', e);
+    }
+
+    try {
+      return await this.svc.createPublicBooking({ ...data, userId });
     } catch (e) {
       console.error('Error in BookingsController.createPublic:', e);
       throw e;
     }
+  }
+
+  /**
+   * 💳 ยืนยันคำสั่งซื้อและการชำระเงิน (Checkout)
+   */
+  @Post('checkout/:draftId')
+  async checkout(@Param('draftId') draftId: string, @Body() body: any) {
+    if (!draftId) throw new BadRequestException('Draft ID is required');
+    return this.svc.checkoutBooking(draftId, body);
+  }
+
+  /**
+   * 🔍 ค้นหาการจองสำหรับ Guest (ต้องใช้ ID + Email ตรงกัน)
+   */
+  @Get('guest/find')
+  async findForGuest(@Query('id') id: string, @Query('email') email: string) {
+    if (!id || !email) {
+      throw new BadRequestException('Booking ID and Email are required');
+    }
+    return this.svc.findForGuest(id, email);
   }
 
   /**

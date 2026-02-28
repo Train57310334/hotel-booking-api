@@ -29,19 +29,19 @@ model User {
   phone        String?
   roles        String[] @default([]) // user, hotel_admin, platform_admin
   avatarUrl    String?
-  
+
   // CRM Fields
-  tags         String[] @default([]) // VIP, Blacklist, Corporate
-  notes        String?  // Staff notes
-  preferences  String?  // JSON string for dietary, room preferences
+  tags        String[] @default([]) // VIP, Blacklist, Corporate
+  notes       String? // Staff notes
+  preferences String? // JSON string for dietary, room preferences
 
   bookings        Booking[]
   reviews         Review[]
   roleAssignments RoleAssignment[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  Hotel     Hotel[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  Hotel       Hotel[]
   roomUpdates RoomStatusLog[]
 }
 
@@ -94,30 +94,30 @@ model Hotel {
   bankName          String?
   bankAccountName   String?
   bankAccountNumber String?
-  
-  // Subscription
-  subscriptionEnd   DateTime?
-  
-  // --- Dynamic Plan Limits & Features ---
-  maxRooms         Int      @default(5)     // e.g. LITE=5, PRO=50, ENT=Unlimited
-  maxRoomTypes     Int      @default(2)     // e.g. LITE=2, PRO=10, ENT=Unlimited
-  maxStaff         Int      @default(1)     // e.g. LITE=1, PRO=5, ENT=Unlimited
-  hasPromotions    Boolean  @default(false) // Can they create discount codes? (LITE=false)
-  hasOnlinePayment Boolean  @default(false) // Can they use Stripe/Omise? (LITE=false, PRO=true)
 
-  isSuspended      Boolean  @default(false) // True if account is manually suspended by Super Admin
+  // Subscription
+  subscriptionEnd DateTime?
+
+  // --- Dynamic Plan Limits & Features ---
+  maxRooms         Int     @default(5) // e.g. LITE=5, PRO=50, ENT=Unlimited
+  maxRoomTypes     Int     @default(2) // e.g. LITE=2, PRO=10, ENT=Unlimited
+  maxStaff         Int     @default(1) // e.g. LITE=1, PRO=5, ENT=Unlimited
+  hasPromotions    Boolean @default(false) // Can they create discount codes? (LITE=false)
+  hasOnlinePayment Boolean @default(false) // Can they use Stripe/Omise? (LITE=false, PRO=true)
+
+  isSuspended Boolean @default(false) // True if account is manually suspended by Super Admin
 
   // RBAC: owner of this hotel
   ownerId String?
   owner   User?   @relation(fields: [ownerId], references: [id])
 
-  roomTypes  RoomType[]
-  reviews    Review[]
-  ratePlans  RatePlan[]
-  bookings   Booking[]
-  promotions Promotion[]
-  expenses   Expense[]
-  messages   Message[]
+  roomTypes            RoomType[]
+  reviews              Review[]
+  ratePlans            RatePlan[]
+  bookings             Booking[]
+  promotions           Promotion[]
+  expenses             Expense[]
+  messages             Message[]
   subscriptionPayments SubscriptionPayment[]
 
   createdAt      DateTime         @default(now())
@@ -125,29 +125,28 @@ model Hotel {
   RoleAssignment RoleAssignment[]
 }
 
-
-
 model RoomType {
-  id        String              @id @default(cuid())
-  hotelId   String
-  name      String
-  bedConfig String?
-  sizeSqm   Int?
-  amenities String[]            @default([])
-  images    String[]            @default([])
-  hotel     Hotel               @relation(fields: [hotelId], references: [id])
-  inventory InventoryCalendar[]
-  ratePlans RatePlan[]
-  bookings  Booking[]
-  overrides RateOverride[]
-  rooms     Room[]              @relation("RoomTypeRooms")
+  id          String              @id @default(cuid())
+  hotelId     String
+  name        String
+  bedConfig   String?
+  sizeSqm     Int?
+  amenities   String[]            @default([])
+  images      String[]            @default([])
+  hotel       Hotel               @relation(fields: [hotelId], references: [id])
+  inventory   InventoryCalendar[]
+  ratePlans   RatePlan[]
+  bookings    Booking[]
+  overrides   RateOverride[]
+  rooms       Room[]              @relation("RoomTypeRooms")
   description String?
-  basePrice Int?
-  maxAdults   Int               @default(2)
-  maxChildren Int               @default(0)
-  isFeatured  Boolean           @default(false)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @default(now()) @updatedAt
+  basePrice   Int?
+  maxAdults   Int                 @default(2)
+  maxChildren Int                 @default(0)
+  isFeatured  Boolean             @default(false)
+  icalUrl     String? // Used for external calendar sync (e.g. from Agoda/Booking.com)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @default(now()) @updatedAt
   deletedAt   DateTime?
 }
 
@@ -161,26 +160,26 @@ enum RoomStatus {
 }
 
 model Room {
-  id         String   @id @default(cuid())
+  id         String          @id @default(cuid())
   roomTypeId String
-  roomType   RoomType @relation("RoomTypeRooms", fields: [roomTypeId], references: [id])
-  bookings    Booking[]  @relation("RoomBookings")
-  roomNumber  String? 
-  status      RoomStatus @default(CLEAN)
-  statusLogs  RoomStatusLog[]
-  deletedAt   DateTime?
+  roomType   RoomType        @relation("RoomTypeRooms", fields: [roomTypeId], references: [id])
+  bookings   Booking[]       @relation("RoomBookings")
+  roomNumber String?
+  status     RoomStatus      @default(CLEAN)
+  statusLogs RoomStatusLog[]
+  deletedAt  DateTime?
 }
 
 model RoomStatusLog {
-  id        String   @id @default(cuid())
-  roomId    String
-  room      Room     @relation(fields: [roomId], references: [id])
-  status    RoomStatus
-  
-  updatedBy String? 
+  id     String     @id @default(cuid())
+  roomId String
+  room   Room       @relation(fields: [roomId], references: [id])
+  status RoomStatus
+
+  updatedBy String?
   user      User?   @relation(fields: [updatedBy], references: [id])
 
-  note      String?
+  note String?
 
   createdAt DateTime @default(now())
 
@@ -188,18 +187,18 @@ model RoomStatusLog {
 }
 
 model DailyStat {
-  id            String   @id @default(cuid())
-  date          DateTime @unique // The date this stat represents (midnight)
-  
-  totalRevenue  Float    @default(0) // Revenue recognized for this day
-  totalBookings Int      @default(0) // Active bookings touching this day
-  occupiedRooms Int      @default(0) // Physical count
-  occupancyRate Float    @default(0) // Percentage (0-100)
-  
-  adr           Float    @default(0) // Average Daily Rate = Revenue / Occupied
-  revPar        Float    @default(0) // Revenue Per Available Room = Revenue / Total Rooms
-  
-  createdAt     DateTime @default(now())
+  id   String   @id @default(cuid())
+  date DateTime @unique // The date this stat represents (midnight)
+
+  totalRevenue  Float @default(0) // Revenue recognized for this day
+  totalBookings Int   @default(0) // Active bookings touching this day
+  occupiedRooms Int   @default(0) // Physical count
+  occupancyRate Float @default(0) // Percentage (0-100)
+
+  adr    Float @default(0) // Average Daily Rate = Revenue / Occupied
+  revPar Float @default(0) // Revenue Per Available Room = Revenue / Total Rooms
+
+  createdAt DateTime @default(now())
 }
 
 model InventoryCalendar {
@@ -220,7 +219,7 @@ model RatePlan {
   roomTypeId        String?
   name              String
   includesBreakfast Boolean @default(false)
-  breakfastPrice    Int     @default(0)  // Price added per night when breakfast is included (set by hotel)
+  breakfastPrice    Int     @default(0) // Price added per night when breakfast is included (set by hotel)
   cancellationRule  String?
   adultPricePolicy  String?
   childPricePolicy  String?
@@ -285,6 +284,8 @@ model Booking {
   leadEmail       String
   leadPhone       String
   specialRequests String?
+  source          String?  @default("direct") // 'direct' or 'OTA'
+  notes           String? // Internal notes or OTA sync references
 
   user     User?    @relation(fields: [userId], references: [id])
   hotel    Hotel    @relation(fields: [hotelId], references: [id])
@@ -292,28 +293,28 @@ model Booking {
   ratePlan RatePlan @relation(fields: [ratePlanId], references: [id])
   payment  Payment?
 
-  room    Room?   @relation("RoomBookings", fields: [roomId], references: [id])
-  roomId  String?
+  room   Room?   @relation("RoomBookings", fields: [roomId], references: [id])
+  roomId String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
-  guests    Guest[]
+
+  guests       Guest[]
   folioCharges FolioCharge[]
 }
 
 model Guest {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   bookingId   String
   name        String
-  idType      String   @default("passport") // passport, national_id, driving_license
+  idType      String  @default("passport") // passport, national_id, driving_license
   idNumber    String?
-  documentUrl String?  // Path to uploaded ID image
-  
-  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  documentUrl String? // Path to uploaded ID image
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Payment {
@@ -326,43 +327,43 @@ model Payment {
   currency  String  @default("THB")
   status    String // created/authorized/captured/voided/refunded/failed
   method    String? // card, promptpay, cash
-  
-  booking   Booking @relation(fields: [bookingId], references: [id])
-  
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 }
 
 model SubscriptionPayment {
-  id          String   @id @default(cuid())
-  hotelId     String
-  amount      Int      // In Subunits (e.g. Satang) or Integer THB
-  currency    String   @default("THB")
-  plan        String   // PRO, ENTERPRISE
-  status      String   @default("success") // success, failed
-  provider    String   @default("stripe")
-  chargeId    String?  // Stripe Charge ID
-  
-  hotel       Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
-  
-  createdAt   DateTime @default(now())
+  id       String  @id @default(cuid())
+  hotelId  String
+  amount   Int // In Subunits (e.g. Satang) or Integer THB
+  currency String  @default("THB")
+  plan     String // PRO, ENTERPRISE
+  status   String  @default("success") // success, failed
+  provider String  @default("stripe")
+  chargeId String? // Stripe Charge ID
+
+  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
 }
 
 model FolioCharge {
   id          String   @id @default(cuid())
   bookingId   String
   description String
-  amount      Int      // In THB
+  amount      Int // In THB
   type        String   @default("OTHER") // ROOM_SERVICE, LAUNDRY, MINIBAR, DAMAGE, OTHER
   date        DateTime @default(now())
-  
-  createdBy   String?
+
+  createdBy String?
   // user     User?    @relation(fields: [createdBy], references: [id]) // Optional: track who added charge
 
-  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 //
@@ -394,8 +395,8 @@ model Message {
   status    String   @default("unread") // unread, read, replied
   createdAt DateTime @default(now())
 
-  hotelId   String?
-  hotel     Hotel?   @relation(fields: [hotelId], references: [id])
+  hotelId String?
+  hotel   Hotel?  @relation(fields: [hotelId], references: [id])
 }
 
 //
@@ -404,7 +405,7 @@ model Message {
 
 model SystemSetting {
   key       String   @id
-  value     String   // DB connection string, API keys, JSON config
+  value     String // DB connection string, API keys, JSON config
   category  String   @default("general") // general, payment, notification
   updatedAt DateTime @updatedAt
 }
@@ -414,21 +415,21 @@ model Notification {
   title     String
   message   String
   type      String   @default("info") // info, success, warning, error
-  userId    String?  // Optional: specific to a user
+  userId    String? // Optional: specific to a user
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
 }
 
 model Expense {
-  id        String   @id @default(cuid())
-  hotelId   String
-  title     String
-  amount    Int // In Subunits (e.g. Satang) or Integer THB depending on convention. Assuming Integer THB based on Booking.totalAmount
-  date      DateTime
-  category  String   @default("general") // utilities, salary, maintenance, marketing
-  
-  hotel     Hotel    @relation(fields: [hotelId], references: [id])
-  
+  id       String   @id @default(cuid())
+  hotelId  String
+  title    String
+  amount   Int // In Subunits (e.g. Satang) or Integer THB depending on convention. Assuming Integer THB based on Booking.totalAmount
+  date     DateTime
+  category String   @default("general") // utilities, salary, maintenance, marketing
+
+  hotel Hotel @relation(fields: [hotelId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -449,16 +450,16 @@ model SubscriptionPlan {
   isPopular       Boolean  @default(false)
   color           String   @default("emerald")
   icon            String   @default("Zap")
-  
+
   // Limits
-  maxRooms        Int      @default(5)
-  maxRoomTypes    Int      @default(2)
-  maxStaff        Int      @default(1)
-  hasPromotions   Boolean  @default(false)
+  maxRooms         Int     @default(5)
+  maxRoomTypes     Int     @default(2)
+  maxStaff         Int     @default(1)
+  hasPromotions    Boolean @default(false)
   hasOnlinePayment Boolean @default(false)
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 //
@@ -473,4 +474,3 @@ model BookingDraft {
 
   @@index([expiresAt])
 }
-

@@ -180,7 +180,8 @@ export class AuthService {
         sub: user.id, 
         email: user.email, 
         roles: user.roles,
-        hotelId // Add to payload
+        hotelId, // Add to payload
+        isImpersonating: !!forceHotelId
     };
     return this.jwtService.sign(payload);
   }

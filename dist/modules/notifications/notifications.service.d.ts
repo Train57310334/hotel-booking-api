@@ -6,6 +6,7 @@ export declare class NotificationsService {
     private readonly logger;
     constructor(prisma: PrismaService, settingsService: SettingsService);
     createNotification(title: string, message: string, type?: string): Promise<void>;
+    sendBookingReceivedEmail(booking: any): Promise<void>;
     sendBookingConfirmationEmail(booking: any): Promise<void>;
     sendPaymentSuccessEmail(booking: any): Promise<void>;
     sendCancellationEmail(booking: any): Promise<void>;
@@ -14,6 +15,7 @@ export declare class NotificationsService {
     private getTransporter;
     private sendEmail;
     private formatDate;
+    private templateBookingReceived;
     private templateBookingConfirmation;
     private templatePaymentSuccess;
     private templateCancellation;

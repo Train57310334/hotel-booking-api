@@ -11,12 +11,13 @@ const common_1 = require("@nestjs/common");
 const rooms_controller_1 = require("./rooms.controller");
 const rooms_service_1 = require("./rooms.service");
 const prisma_module_1 = require("../../common/prisma/prisma.module");
+const events_module_1 = require("../events/events.module");
 let RoomsModule = class RoomsModule {
 };
 exports.RoomsModule = RoomsModule;
 exports.RoomsModule = RoomsModule = __decorate([
     (0, common_1.Module)({
-        imports: [prisma_module_1.PrismaModule],
+        imports: [prisma_module_1.PrismaModule, events_module_1.EventsModule],
         controllers: [rooms_controller_1.RoomsController],
         providers: [rooms_service_1.RoomsService],
     })

@@ -179,7 +179,8 @@ let AuthService = class AuthService {
             sub: user.id,
             email: user.email,
             roles: user.roles,
-            hotelId
+            hotelId,
+            isImpersonating: !!forceHotelId
         };
         return this.jwtService.sign(payload);
     }

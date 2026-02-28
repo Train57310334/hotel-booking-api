@@ -1,5 +1,6 @@
-import { Controller, Get, Query, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Req, Res } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { Response } from 'express';
 import { ReportsService } from './reports.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -56,5 +57,25 @@ export class ReportsController {
   @Get('daily-stats')
   async dailyStats() {
       return this.svc.getDailyStats();
+  }
+
+  @Get('export/csv')
+  async exportCsv(@Req() req: any, @Res() res: Response, @Query('from') from: string, @Query('to') to: string, @Query('hotelId') hotelId?: string) {
+      const hId = await this.getHotelId(req, hotelId);
+      const csv = await this.svc.exportToCsv(hId, new Date(from), new Date(to));
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=financial_report.csv');
+      res.send(csv);
+  }
+
+  @Get('export/excel')
+  async exportExcel(@Req() req: any, @Res() res: Response, @Query('from') from: string, @Query('to') to: string, @Query('hotelId') hotelId?: string) {
+      const hId = await this.getHotelId(req, hotelId);
+      const buffer = await this.svc.exportToExcel(hId, new Date(from), new Date(to));
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename=financial_report.xlsx');
+      res.send(buffer);
   }
 }

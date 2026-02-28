@@ -23,6 +23,15 @@ export declare class PaymentsService {
         id: string;
     }>;
     createOmiseCharge(amount: number, token: string, description?: string, bookingId?: string): Promise<any>;
+    createOmisePromptPaySource(amount: number, bookingId: string, description?: string): Promise<{
+        chargeId: any;
+        qrCodeUrl: any;
+        amount: number;
+        sourceId: any;
+    }>;
+    handleOmiseWebhook(payload: any): Promise<{
+        received: boolean;
+    }>;
     updateStatus(id: string, status: 'captured' | 'failed'): Promise<{
         id: string;
         createdAt: Date;

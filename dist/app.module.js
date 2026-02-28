@@ -39,6 +39,10 @@ const night_audit_module_1 = require("./modules/night-audit/night-audit.module")
 const folio_module_1 = require("./modules/folio/folio.module");
 const downloads_module_1 = require("./modules/downloads/downloads.module");
 const subscriptions_module_1 = require("./modules/subscriptions/subscriptions.module");
+const ical_module_1 = require("./modules/ical/ical.module");
+const housekeeping_module_1 = require("./modules/housekeeping/housekeeping.module");
+const channels_module_1 = require("./modules/channels/channels.module");
+const events_module_1 = require("./modules/events/events.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -75,6 +79,10 @@ exports.AppModule = AppModule = __decorate([
             folio_module_1.FolioModule,
             downloads_module_1.DownloadsModule,
             subscriptions_module_1.SubscriptionsModule,
+            ical_module_1.IcalModule,
+            housekeeping_module_1.HousekeepingModule,
+            channels_module_1.ChannelsModule,
+            events_module_1.EventsModule,
         ],
         providers: [prisma_service_1.PrismaService],
     })

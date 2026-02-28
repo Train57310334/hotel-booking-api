@@ -30,6 +30,7 @@ export declare class RatesService {
             maxAdults: number;
             maxChildren: number;
             isFeatured: boolean;
+            icalUrl: string | null;
             deletedAt: Date | null;
         };
     } & {

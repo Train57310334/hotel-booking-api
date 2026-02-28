@@ -33,7 +33,14 @@ let AuthController = class AuthController {
         return this.authService.login(body);
     }
     async getProfile(req) {
-        return this.authService.getProfile(req.user.userId);
+        const profile = await this.authService.getProfile(req.user.userId);
+        if (profile && req.user.roles) {
+            profile.roles = req.user.roles;
+            if (req.user.hotelId) {
+                profile.roleAssignments = [{ hotelId: req.user.hotelId, role: 'hotel_admin' }];
+            }
+        }
+        return profile;
     }
     async impersonate(body) {
         return this.authService.impersonate(body.targetHotelId);

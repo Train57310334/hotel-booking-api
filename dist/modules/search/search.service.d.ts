@@ -17,6 +17,7 @@ export declare class SearchService {
             rooms: ({
                 bookings: {
                     id: string;
+                    notes: string | null;
                     createdAt: Date;
                     updatedAt: Date;
                     userId: string | null;
@@ -33,6 +34,7 @@ export declare class SearchService {
                     leadEmail: string;
                     leadPhone: string;
                     specialRequests: string | null;
+                    source: string | null;
                     roomId: string | null;
                 }[];
             } & {
@@ -57,6 +59,7 @@ export declare class SearchService {
             maxAdults: number;
             maxChildren: number;
             isFeatured: boolean;
+            icalUrl: string | null;
             deletedAt: Date | null;
         })[];
         id: string;
@@ -122,10 +125,12 @@ export declare class SearchService {
                 maxAdults: number;
                 maxChildren: number;
                 isFeatured: boolean;
+                icalUrl: string | null;
                 deletedAt: Date | null;
             };
         } & {
             id: string;
+            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
             userId: string | null;
@@ -142,6 +147,7 @@ export declare class SearchService {
             leadEmail: string;
             leadPhone: string;
             specialRequests: string | null;
+            source: string | null;
             roomId: string | null;
         })[];
         rooms: ({
@@ -160,6 +166,7 @@ export declare class SearchService {
                 maxAdults: number;
                 maxChildren: number;
                 isFeatured: boolean;
+                icalUrl: string | null;
                 deletedAt: Date | null;
             };
         } & {
@@ -184,6 +191,7 @@ export declare class SearchService {
             maxAdults: number;
             maxChildren: number;
             isFeatured: boolean;
+            icalUrl: string | null;
             deletedAt: Date | null;
         }[];
         hotels: any[];
@@ -219,10 +227,12 @@ export declare class SearchService {
                 maxAdults: number;
                 maxChildren: number;
                 isFeatured: boolean;
+                icalUrl: string | null;
                 deletedAt: Date | null;
             };
         } & {
             id: string;
+            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
             userId: string | null;
@@ -239,6 +249,7 @@ export declare class SearchService {
             leadEmail: string;
             leadPhone: string;
             specialRequests: string | null;
+            source: string | null;
             roomId: string | null;
         })[];
         rooms: any[];

@@ -20,6 +20,12 @@ export declare class NotificationsController {
     triggerTest(): Promise<{
         success: boolean;
     }>;
+    testEmail(req: ExpressRequest & {
+        user: any;
+    }, type: string, to: string): Promise<{
+        success: boolean;
+        message: string;
+    }>;
     private timeAgo;
     markAsRead(id: string): Promise<{
         message: string;

@@ -56,6 +56,20 @@ let ReportsController = class ReportsController {
     async dailyStats() {
         return this.svc.getDailyStats();
     }
+    async exportCsv(req, res, from, to, hotelId) {
+        const hId = await this.getHotelId(req, hotelId);
+        const csv = await this.svc.exportToCsv(hId, new Date(from), new Date(to));
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename=financial_report.csv');
+        res.send(csv);
+    }
+    async exportExcel(req, res, from, to, hotelId) {
+        const hId = await this.getHotelId(req, hotelId);
+        const buffer = await this.svc.exportToExcel(hId, new Date(from), new Date(to));
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename=financial_report.xlsx');
+        res.send(buffer);
+    }
 };
 exports.ReportsController = ReportsController;
 __decorate([
@@ -114,6 +128,28 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], ReportsController.prototype, "dailyStats", null);
+__decorate([
+    (0, common_1.Get)('export/csv'),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Res)()),
+    __param(2, (0, common_1.Query)('from')),
+    __param(3, (0, common_1.Query)('to')),
+    __param(4, (0, common_1.Query)('hotelId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String, String, String]),
+    __metadata("design:returntype", Promise)
+], ReportsController.prototype, "exportCsv", null);
+__decorate([
+    (0, common_1.Get)('export/excel'),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Res)()),
+    __param(2, (0, common_1.Query)('from')),
+    __param(3, (0, common_1.Query)('to')),
+    __param(4, (0, common_1.Query)('hotelId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String, String, String]),
+    __metadata("design:returntype", Promise)
+], ReportsController.prototype, "exportExcel", null);
 exports.ReportsController = ReportsController = __decorate([
     (0, swagger_1.ApiTags)('reports'),
     (0, swagger_1.ApiBearerAuth)(),
