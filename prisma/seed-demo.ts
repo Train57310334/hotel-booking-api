@@ -126,8 +126,10 @@ async function main() {
   console.log(`✅ Created Rate Plans`);
 
   // 6. Create Promotions
-  const promo = await prisma.promotion.create({
-    data: {
+  const promo = await prisma.promotion.upsert({
+    where: { code: 'DEMO20' },
+    update: {},
+    create: {
       hotelId: hotel.id,
       code: 'DEMO20',
       type: 'percent',
@@ -137,7 +139,8 @@ async function main() {
       conditions: 'Valid for all room types. For demonstration purposes.'
     }
   });
-  console.log(`✅ Created Promotion: ${promo.code}`);
+  console.log(`✅ Created/Ensured Promotion: ${promo.code}`);
+
 
   // 7. Seed Inventory Calendar
   const today = new Date();
