@@ -72,6 +72,7 @@ export declare class HotelsService {
             maxAdults: number;
             maxChildren: number;
             isFeatured: boolean;
+            icalUrl: string | null;
             deletedAt: Date | null;
         })[];
     } & {
@@ -199,6 +200,7 @@ export declare class HotelsService {
             maxAdults: number;
             maxChildren: number;
             isFeatured: boolean;
+            icalUrl: string | null;
             deletedAt: Date | null;
         })[];
     } & {

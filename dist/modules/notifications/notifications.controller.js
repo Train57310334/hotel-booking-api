@@ -41,6 +41,36 @@ let NotificationsController = class NotificationsController {
         await this.notificationsService.createNotification('Test Notification', 'This is a test notification from the admin panel.', 'info');
         return { success: true };
     }
+    async testEmail(req, type, to) {
+        const user = req.user;
+        if (!to)
+            to = user.email || 'test@example.com';
+        const hotel = await this.prisma.hotel.findFirst();
+        if (!hotel)
+            return { success: false, message: 'No hotel config found' };
+        const dummyBooking = {
+            id: 'TEST-' + Math.floor(Math.random() * 100000),
+            hotel: hotel,
+            leadName: user.name || 'Test User',
+            leadEmail: to,
+            checkIn: new Date(Date.now() + 86400000),
+            checkOut: new Date(Date.now() + 86400000 * 3),
+            totalAmount: 15400,
+            roomType: {
+                name: 'Deluxe Ocean View',
+                images: ['https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&q=80&w=600']
+            }
+        };
+        if (type === 'received')
+            await this.notificationsService.sendBookingReceivedEmail(dummyBooking);
+        else if (type === 'confirmed')
+            await this.notificationsService.sendBookingConfirmationEmail(dummyBooking);
+        else if (type === 'feedback')
+            await this.notificationsService.sendFeedbackRequest(dummyBooking);
+        else
+            return { success: false, message: 'Invalid type' };
+        return { success: true, message: `Sent test ${type} email to ${to}` };
+    }
     timeAgo(date) {
         const seconds = Math.floor((new Date().getTime() - new Date(date).getTime()) / 1000);
         let interval = seconds / 31536000;
@@ -91,6 +121,15 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], NotificationsController.prototype, "triggerTest", null);
+__decorate([
+    (0, common_1.Post)('test-email'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Query)('type')),
+    __param(2, (0, common_1.Query)('to')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, String]),
+    __metadata("design:returntype", Promise)
+], NotificationsController.prototype, "testEmail", null);
 __decorate([
     (0, common_1.Put)(':id/read'),
     __param(0, (0, common_1.Param)('id')),

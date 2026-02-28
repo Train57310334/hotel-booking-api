@@ -217,6 +217,7 @@ export declare class HotelsController {
             maxAdults: number;
             maxChildren: number;
             isFeatured: boolean;
+            icalUrl: string | null;
             deletedAt: Date | null;
         })[];
     } & {

@@ -1,3 +1,4 @@
+import { Response } from 'express';
 import { ReportsService } from './reports.service';
 export declare class ReportsController {
     private svc;
@@ -33,5 +34,7 @@ export declare class ReportsController {
         adr: number;
         revPar: number;
     }[]>;
+    exportCsv(req: any, res: Response, from: string, to: string, hotelId?: string): Promise<void>;
+    exportExcel(req: any, res: Response, from: string, to: string, hotelId?: string): Promise<void>;
 }
 //# sourceMappingURL=reports.controller.d.ts.map

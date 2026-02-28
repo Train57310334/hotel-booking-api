@@ -18,10 +18,12 @@ export declare class RoomsController {
             maxAdults: number;
             maxChildren: number;
             isFeatured: boolean;
+            icalUrl: string | null;
             deletedAt: Date | null;
         };
         bookings: {
             id: string;
+            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
             userId: string | null;
@@ -38,6 +40,7 @@ export declare class RoomsController {
             leadEmail: string;
             leadPhone: string;
             specialRequests: string | null;
+            source: string | null;
             roomId: string | null;
         }[];
         statusLogs: {
@@ -91,6 +94,7 @@ export declare class RoomsController {
             maxAdults: number;
             maxChildren: number;
             isFeatured: boolean;
+            icalUrl: string | null;
             deletedAt: Date | null;
         };
     } & {

@@ -32,7 +32,17 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Get('me')
   async getProfile(@Req() req: any) {
-    return this.authService.getProfile(req.user.userId);
+    const profile = await this.authService.getProfile(req.user.userId);
+    if (profile && req.user.roles) {
+      // Use roles from the JWT context (handles impersonation stripping of platform_admin)
+      profile.roles = req.user.roles;
+      
+      // If impersonating, the JWT contains a forced hotelId. Override DB roleAssignments globally
+      if (req.user.hotelId) {
+          (profile as any).roleAssignments = [{ hotelId: req.user.hotelId, role: 'hotel_admin' }];
+      }
+    }
+    return profile;
   }
 
   /** 🕵️ เข้าสิงระบบลูกค้า (เฉพาะ Platform Admin) */

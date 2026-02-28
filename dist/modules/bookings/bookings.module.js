@@ -14,12 +14,13 @@ const prisma_service_1 = require("../../common/prisma/prisma.service");
 const notifications_module_1 = require("../notifications/notifications.module");
 const inventory_module_1 = require("../inventory/inventory.module");
 const jwt_1 = require("@nestjs/jwt");
+const events_module_1 = require("../events/events.module");
 let BookingsModule = class BookingsModule {
 };
 exports.BookingsModule = BookingsModule;
 exports.BookingsModule = BookingsModule = __decorate([
     (0, common_1.Module)({
-        imports: [notifications_module_1.NotificationsModule, inventory_module_1.InventoryModule, jwt_1.JwtModule],
+        imports: [notifications_module_1.NotificationsModule, inventory_module_1.InventoryModule, jwt_1.JwtModule, events_module_1.EventsModule],
         controllers: [bookings_controller_1.BookingsController],
         providers: [bookings_service_1.BookingsService, prisma_service_1.PrismaService],
         exports: [bookings_service_1.BookingsService],

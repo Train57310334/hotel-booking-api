@@ -43,10 +43,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(payload: any) {
     const userId: string = payload.sub;
+    const isImpersonating: boolean = !!payload.isImpersonating;
+    const impersonatedHotelId: string | null = payload.hotelId;
     const now = Date.now();
 
     // ── 1. Cache Hit ──────────────────────────────────────────────────────────
-    const cached = userCache.get(userId);
+    const cacheKey = isImpersonating ? `${userId}-imp-${impersonatedHotelId}` : userId;
+    const cached = userCache.get(cacheKey);
     if (cached && now < cached.expiresAt) {
       return {
         userId: cached.userId,
@@ -69,22 +72,32 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       return null;
     }
 
-    const hotelId =
-      user.roleAssignments && user.roleAssignments.length > 0
-        ? user.roleAssignments[0].hotelId
-        : null;
+    const hotelId = isImpersonating
+      ? impersonatedHotelId
+      : (user.roleAssignments && user.roleAssignments.length > 0
+          ? user.roleAssignments[0].hotelId
+          : null);
+
+    let roles = user.roles;
+    if (isImpersonating) {
+       // Hide platform_admin so the frontend correctly loads the hotel dashboard
+       roles = roles.filter(r => r !== 'platform_admin');
+       if (!roles.includes('hotel_admin')) {
+           roles.push('hotel_admin');
+       }
+    }
 
     const freshUser: CachedUser = {
       userId: user.id,
       email: user.email,
-      roles: user.roles,
+      roles,
       hotelId,
       roleAssignments: user.roleAssignments,
       expiresAt: now + USER_CACHE_TTL_MS,
     };
 
     // ── 3. Store in cache ─────────────────────────────────────────────────────
-    userCache.set(userId, freshUser);
+    userCache.set(cacheKey, freshUser);
 
     return {
       userId: freshUser.userId,

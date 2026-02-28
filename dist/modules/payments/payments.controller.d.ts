@@ -54,6 +54,19 @@ export declare class PaymentsController {
         token: string;
         description?: string;
     }): Promise<any>;
+    omisePromptPay(body: {
+        amount: number;
+        description?: string;
+        bookingId: string;
+    }): Promise<{
+        chargeId: any;
+        qrCodeUrl: any;
+        amount: number;
+        sourceId: any;
+    }>;
+    omiseWebhook(payload: any): Promise<{
+        received: boolean;
+    }>;
     capture(bookingId: string): {
         bookingId: string;
         status: string;

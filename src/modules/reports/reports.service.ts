@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import * as xlsx from 'xlsx';
+import { parse } from 'json2csv';
+import { format } from 'date-fns';
 
 @Injectable()
 export class ReportsService {
@@ -129,5 +132,72 @@ export class ReportsService {
           orderBy: { date: 'desc' },
           take: 30
       });
+  }
+
+  // --- EXPORT METHODS ---
+  async exportToCsv(hotelId: string, from: Date, to: Date): Promise<string> {
+      const summary = await this.getSummary(hotelId, from, to);
+      const data = [
+          {
+              Period: `${format(from, 'yyyy-MM-dd')} to ${format(to, 'yyyy-MM-dd')}`,
+              TotalBookings: summary.totalBookings,
+              TotalRevenue: summary.totalRevenue,
+              TotalExpenses: summary.totalExpenses,
+              NetProfit: summary.totalProfit
+          }
+      ];
+      
+      return parse(data);
+  }
+
+  async exportToExcel(hotelId: string, from: Date, to: Date): Promise<Buffer> {
+      const wb = xlsx.utils.book_new();
+
+      // Sheet 1: Financial Summary
+      const summary = await this.getSummary(hotelId, from, to);
+      const summaryData = [
+          ['Financial Summary Report'],
+          ['Period:', `${format(from, 'yyyy-MM-dd')} to ${format(to, 'yyyy-MM-dd')}`],
+          [],
+          ['Metric', 'Amount'],
+          ['Total Bookings', summary.totalBookings],
+          ['Total Revenue (THB)', summary.totalRevenue],
+          ['Total Expenses (THB)', summary.totalExpenses],
+          ['Net Profit (THB)', summary.totalProfit],
+      ];
+      const summarySheet = xlsx.utils.aoa_to_sheet(summaryData);
+      xlsx.utils.book_append_sheet(wb, summarySheet, 'Summary');
+
+      // Sheet 2: Daily KPI (Night Audit)
+      const dailyKPIs = await this.prisma.dailyStat.findMany({
+          where: { date: { gte: from, lte: to } },
+          orderBy: { date: 'asc' }
+      });
+      const kpiData = dailyKPIs.map(k => ({
+          Date: format(k.date, 'yyyy-MM-dd'),
+          'Occupied Rooms': k.occupiedRooms,
+          'Occupancy (%)': k.occupancyRate.toFixed(2),
+          'ADR (THB)': k.adr.toFixed(2),
+          'RevPAR (THB)': k.revPar.toFixed(2),
+          'Recognized Revenue': k.totalRevenue
+      }));
+      const kpiSheet = xlsx.utils.json_to_sheet(kpiData.length ? kpiData : [{Note: 'No data for period'}]);
+      xlsx.utils.book_append_sheet(wb, kpiSheet, 'Night Audit KPIs');
+
+      // Sheet 3: Expenses Log
+      const expenses = await (this.prisma as any).expense.findMany({
+          where: { hotelId, date: { gte: from, lte: to } },
+          orderBy: { date: 'asc' }
+      });
+      const expData = expenses.map(e => ({
+          Date: format(e.date, 'yyyy-MM-dd'),
+          Title: e.title,
+          Category: e.category.toUpperCase(),
+          'Amount (THB)': e.amount
+      }));
+      const expSheet = xlsx.utils.json_to_sheet(expData.length ? expData : [{Note: 'No expenses for period'}]);
+      xlsx.utils.book_append_sheet(wb, expSheet, 'Expenses Log');
+
+      return xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
   }
 }

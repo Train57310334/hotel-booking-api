@@ -94,10 +94,12 @@ export declare class UsersService {
                 maxAdults: number;
                 maxChildren: number;
                 isFeatured: boolean;
+                icalUrl: string | null;
                 deletedAt: Date | null;
             };
         } & {
             id: string;
+            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
             userId: string | null;
@@ -114,6 +116,7 @@ export declare class UsersService {
             leadEmail: string;
             leadPhone: string;
             specialRequests: string | null;
+            source: string | null;
             roomId: string | null;
         })[];
         _count: {

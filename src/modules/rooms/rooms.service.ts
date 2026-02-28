@@ -1,9 +1,14 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/common/prisma/prisma.service';
 
+import { EventsGateway } from '@/modules/events/events.gateway';
+
 @Injectable()
 export class RoomsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private eventsGateway: EventsGateway,
+  ) {}
 
   async findAll(search?: string, hotelId?: string) {
     const where: any = {
@@ -218,6 +223,13 @@ export class RoomsService {
   }
 
   async updateStatus(id: string, status: any, userId?: string, note?: string) {
+    // 1. Fetch Room to get hotelId for broadcasting
+    const room = await this.prisma.room.findUnique({
+        where: { id },
+        include: { roomType: true }
+    });
+    if (!room) throw new NotFoundException('Room not found');
+
     // Create Log
     await this.prisma.roomStatusLog.create({
         data: {
@@ -228,9 +240,19 @@ export class RoomsService {
         }
     });
 
-    return this.prisma.room.update({
+    const updatedRoom = await this.prisma.room.update({
       where: { id },
       data: { status }
     });
+
+    // Broadcast event
+    this.eventsGateway.broadcastToHotel(room.roomType.hotelId, 'roomStatusChanged', {
+        roomId: room.id,
+        roomNumber: room.roomNumber,
+        status: status,
+        updatedBy: userId
+    });
+
+    return updatedRoom;
   }
 }

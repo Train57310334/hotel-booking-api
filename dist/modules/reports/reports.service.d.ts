@@ -33,5 +33,7 @@ export declare class ReportsService {
         adr: number;
         revPar: number;
     }[]>;
+    exportToCsv(hotelId: string, from: Date, to: Date): Promise<string>;
+    exportToExcel(hotelId: string, from: Date, to: Date): Promise<Buffer>;
 }
 //# sourceMappingURL=reports.service.d.ts.map

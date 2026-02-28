@@ -31,8 +31,11 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
     }
     async validate(payload) {
         const userId = payload.sub;
+        const isImpersonating = !!payload.isImpersonating;
+        const impersonatedHotelId = payload.hotelId;
         const now = Date.now();
-        const cached = userCache.get(userId);
+        const cacheKey = isImpersonating ? `${userId}-imp-${impersonatedHotelId}` : userId;
+        const cached = userCache.get(cacheKey);
         if (cached && now < cached.expiresAt) {
             return {
                 userId: cached.userId,
@@ -50,18 +53,27 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
             userCache.delete(userId);
             return null;
         }
-        const hotelId = user.roleAssignments && user.roleAssignments.length > 0
-            ? user.roleAssignments[0].hotelId
-            : null;
+        const hotelId = isImpersonating
+            ? impersonatedHotelId
+            : (user.roleAssignments && user.roleAssignments.length > 0
+                ? user.roleAssignments[0].hotelId
+                : null);
+        let roles = user.roles;
+        if (isImpersonating) {
+            roles = roles.filter(r => r !== 'platform_admin');
+            if (!roles.includes('hotel_admin')) {
+                roles.push('hotel_admin');
+            }
+        }
         const freshUser = {
             userId: user.id,
             email: user.email,
-            roles: user.roles,
+            roles,
             hotelId,
             roleAssignments: user.roleAssignments,
             expiresAt: now + USER_CACHE_TTL_MS,
         };
-        userCache.set(userId, freshUser);
+        userCache.set(cacheKey, freshUser);
         return {
             userId: freshUser.userId,
             email: freshUser.email,

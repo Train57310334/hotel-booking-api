@@ -124,14 +124,39 @@ let BookingsController = class BookingsController {
         }
         return data;
     }
-    async createPublic(data) {
+    async createPublic(req, data) {
+        let userId = null;
         try {
-            return await this.svc.createPublicBooking(data);
+            const authHeader = req.headers.authorization;
+            if (authHeader && authHeader.startsWith('Bearer ')) {
+                const token = authHeader.split(' ')[1];
+                const payload = this.jwtService.decode(token);
+                if (payload) {
+                    userId = payload.userId || payload.sub;
+                }
+            }
+        }
+        catch (e) {
+            console.warn('Failed to parse token in createPublic:', e);
+        }
+        try {
+            return await this.svc.createPublicBooking({ ...data, userId });
         }
         catch (e) {
             console.error('Error in BookingsController.createPublic:', e);
             throw e;
         }
+    }
+    async checkout(draftId, body) {
+        if (!draftId)
+            throw new common_1.BadRequestException('Draft ID is required');
+        return this.svc.checkoutBooking(draftId, body);
+    }
+    async findForGuest(id, email) {
+        if (!id || !email) {
+            throw new common_1.BadRequestException('Booking ID and Email are required');
+        }
+        return this.svc.findForGuest(id, email);
     }
     async getSuperBookings(query) {
         return this.svc.getAllPlatformBookings(query);
@@ -235,11 +260,28 @@ __decorate([
 ], BookingsController.prototype, "getDraft", null);
 __decorate([
     (0, common_1.Post)('public'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], BookingsController.prototype, "createPublic", null);
+__decorate([
+    (0, common_1.Post)('checkout/:draftId'),
+    __param(0, (0, common_1.Param)('draftId')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], BookingsController.prototype, "checkout", null);
+__decorate([
+    (0, common_1.Get)('guest/find'),
+    __param(0, (0, common_1.Query)('id')),
+    __param(1, (0, common_1.Query)('email')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], BookingsController.prototype, "findForGuest", null);
 __decorate([
     (0, common_1.Get)('super'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),

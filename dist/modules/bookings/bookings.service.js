@@ -15,11 +15,13 @@ const schedule_1 = require("@nestjs/schedule");
 const prisma_service_1 = require("../../common/prisma/prisma.service");
 const notifications_service_1 = require("../notifications/notifications.service");
 const inventory_service_1 = require("../inventory/inventory.service");
+const events_gateway_1 = require("../events/events.gateway");
 let BookingsService = class BookingsService {
-    constructor(prisma, notificationsService, inventoryService) {
+    constructor(prisma, notificationsService, inventoryService, eventsGateway) {
         this.prisma = prisma;
         this.notificationsService = notificationsService;
         this.inventoryService = inventoryService;
+        this.eventsGateway = eventsGateway;
     }
     async saveDraft(data) {
         const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
@@ -140,8 +142,50 @@ let BookingsService = class BookingsService {
             await this.inventoryService.reduceInventory(data.roomTypeId, dateRange, tx);
             return newBooking;
         });
-        await this.notificationsService.sendBookingConfirmationEmail(booking);
+        await this.notificationsService.sendBookingReceivedEmail(booking);
+        this.eventsGateway.broadcastToHotel(booking.hotelId, 'newBooking', booking);
         return booking;
+    }
+    async checkoutBooking(draftId, payload) {
+        const booking = await this.prisma.booking.findUnique({
+            where: { id: draftId }
+        });
+        if (!booking) {
+            throw new common_1.NotFoundException('Booking session expired or not found.');
+        }
+        if (booking.status !== 'pending') {
+            throw new common_1.BadRequestException('This booking has already been processed.');
+        }
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        const isSuccess = payload.cardNumber && payload.cardNumber.length >= 15;
+        if (!isSuccess) {
+            throw new common_1.BadRequestException('Payment declined. Please check your card details.');
+        }
+        const updatedBooking = await this.prisma.$transaction(async (tx) => {
+            const confirmedBooking = await tx.booking.update({
+                where: { id: draftId },
+                data: { status: 'confirmed' }
+            });
+            await tx.payment.create({
+                data: {
+                    bookingId: confirmedBooking.id,
+                    amount: confirmedBooking.totalAmount,
+                    method: 'Credit Card',
+                    provider: 'System (Mock)',
+                    status: 'captured',
+                    currency: 'THB',
+                    chargeId: `ch_mock_${Date.now()}`
+                }
+            });
+            return confirmedBooking;
+        });
+        try {
+            await this.notificationsService.sendBookingReceivedEmail(updatedBooking);
+        }
+        catch (e) {
+            console.warn('Failed to send success email', e);
+        }
+        return { success: true, booking: updatedBooking };
     }
     async createPublicBooking(data) {
         const checkInDate = new Date(data.checkInDate);
@@ -201,12 +245,39 @@ let BookingsService = class BookingsService {
                 roomTotal *= roomOpt.quantity;
                 backendCalculatedTotal += roomTotal;
             }
+            let appliedDiscount = 0;
+            let finalPromoLog = null;
+            if (data.promotionCode) {
+                const promo = await tx.promotion.findUnique({
+                    where: { code: data.promotionCode },
+                    include: { hotel: true }
+                });
+                if (promo) {
+                    const now = new Date();
+                    const isValid = now >= promo.startDate && now <= promo.endDate &&
+                        (!promo.hotel || promo.hotel.hasPromotions);
+                    if (isValid) {
+                        if (promo.type === 'percent') {
+                            appliedDiscount = Math.floor(backendCalculatedTotal * (promo.value / 100));
+                        }
+                        else {
+                            appliedDiscount = promo.value;
+                        }
+                        if (appliedDiscount > backendCalculatedTotal) {
+                            appliedDiscount = backendCalculatedTotal;
+                        }
+                        backendCalculatedTotal -= appliedDiscount;
+                        finalPromoLog = `[PROMO: ${promo.code} - Saved ${appliedDiscount}]`;
+                    }
+                }
+            }
             if (Math.abs((data.totalPrice || 0) - backendCalculatedTotal) > 50) {
-                throw new common_1.BadRequestException(`Price manipulation detected. Expected ~${backendCalculatedTotal}, got ${data.totalPrice}`);
+                throw new common_1.BadRequestException(`Price manipulation detected. Expected ~${backendCalculatedTotal}, got ${data.totalPrice}. (Includes promo logic if applied)`);
             }
             const primaryRoom = data.rooms[0];
             const newBooking = await tx.booking.create({
                 data: {
+                    userId: data.userId ?? null,
                     hotelId: data.hotelId,
                     roomTypeId: primaryRoom.roomTypeId,
                     ratePlanId: primaryRoom.ratePlanId,
@@ -219,7 +290,9 @@ let BookingsService = class BookingsService {
                     leadName: data.guestDetails?.name ?? 'Guest',
                     leadEmail: data.guestDetails?.email ?? 'guest@example.com',
                     leadPhone: data.guestDetails?.phone ?? '',
-                    specialRequests: data.guestDetails?.requests ?? null,
+                    specialRequests: data.guestDetails?.requests ?
+                        (finalPromoLog ? `${finalPromoLog}\n${data.guestDetails.requests}` : data.guestDetails.requests) :
+                        (finalPromoLog ? finalPromoLog : null),
                 },
                 include: { hotel: true, roomType: true }
             });
@@ -269,6 +342,8 @@ let BookingsService = class BookingsService {
                     }
                 }
             }
+            await this.notificationsService.sendBookingReceivedEmail(newBooking);
+            this.eventsGateway.broadcastToHotel(newBooking.hotelId, 'newBooking', newBooking);
             return newBooking;
         });
     }
@@ -338,7 +413,36 @@ let BookingsService = class BookingsService {
         await this.notificationsService.sendFeedbackRequest(booking);
         return { success: true, message: 'Feedback request sent' };
     }
+    async findMyBookings(userId) {
+        if (!userId)
+            throw new common_1.BadRequestException('User ID is required');
+        return this.prisma.booking.findMany({
+            where: { userId },
+            include: {
+                hotel: { select: { name: true, address: true, images: true, contactPhone: true } },
+                roomType: { select: { name: true, images: true } },
+                room: { select: { roomNumber: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+    }
     async find(id) {
+        const booking = await this.prisma.booking.findUnique({
+            where: { id },
+            include: {
+                hotel: true,
+                roomType: true,
+                room: true,
+                ratePlan: true,
+                payment: true,
+                guests: true,
+            },
+        });
+        if (!booking)
+            throw new common_1.NotFoundException(`Booking with ID ${id} not found`);
+        return booking;
+    }
+    async findForGuest(id, email) {
         const booking = await this.prisma.booking.findUnique({
             where: { id },
             include: {
@@ -350,56 +454,11 @@ let BookingsService = class BookingsService {
             },
         });
         if (!booking)
-            throw new common_1.NotFoundException(`Booking with ID ${id} not found`);
+            throw new common_1.NotFoundException('Booking not found');
+        if (booking.leadEmail.toLowerCase() !== email.toLowerCase()) {
+            throw new common_1.ForbiddenException('Invalid email address for this booking');
+        }
         return booking;
-    }
-    async findAll(hotelId, search, status, sortBy = 'createdAt', order = 'desc', page = 1, limit = 20) {
-        const where = { hotelId };
-        if (status && status !== 'All') {
-            where.status = status.toLowerCase();
-        }
-        if (search) {
-            where.OR = [
-                { leadName: { contains: search, mode: 'insensitive' } },
-                { leadEmail: { contains: search, mode: 'insensitive' } },
-                { id: { contains: search, mode: 'insensitive' } }
-            ];
-        }
-        const orderBy = {};
-        if (['createdAt', 'checkIn', 'checkOut', 'totalAmount', 'status'].includes(sortBy)) {
-            orderBy[sortBy] = order === 'asc' ? 'asc' : 'desc';
-        }
-        else {
-            orderBy.createdAt = 'desc';
-        }
-        const pageNum = Math.max(1, Number(page) || 1);
-        const limitNum = Math.max(1, Number(limit) || 20);
-        const [data, total] = await Promise.all([
-            this.prisma.booking.findMany({
-                where,
-                include: {
-                    hotel: true,
-                    user: true,
-                    roomType: true,
-                    room: true,
-                    payment: true,
-                    guests: true,
-                },
-                orderBy,
-                skip: (pageNum - 1) * limitNum,
-                take: limitNum,
-            }),
-            this.prisma.booking.count({ where })
-        ]);
-        return {
-            data,
-            meta: {
-                total,
-                page: pageNum,
-                last_page: Math.ceil(total / limitNum),
-                limit: limitNum
-            }
-        };
     }
     async updateStatus(bookingId, status, hotelId, userId, roomId) {
         const booking = await this.prisma.booking.findUnique({
@@ -457,6 +516,12 @@ let BookingsService = class BookingsService {
         const updatedBooking = await this.prisma.booking.update({
             where: { id: bookingId },
             data: { status },
+        });
+        this.eventsGateway.broadcastToHotel(booking.hotelId, 'bookingUpdated', {
+            bookingId: updatedBooking.id,
+            status: updatedBooking.status,
+            guestName: updatedBooking.leadName,
+            roomNumber: roomId || booking.roomId
         });
         return updatedBooking;
     }
@@ -734,6 +799,54 @@ let BookingsService = class BookingsService {
             }
         };
     }
+    async findAll(hotelId, search, status, sortBy = 'createdAt', order = 'desc', page = 1, limit = 20) {
+        const where = { hotelId };
+        if (status && status !== 'All') {
+            where.status = status.toLowerCase();
+        }
+        if (search) {
+            where.OR = [
+                { leadName: { contains: search, mode: 'insensitive' } },
+                { leadEmail: { contains: search, mode: 'insensitive' } },
+                { id: { contains: search, mode: 'insensitive' } }
+            ];
+        }
+        const orderBy = {};
+        if (['createdAt', 'checkIn', 'checkOut', 'totalAmount', 'status'].includes(sortBy)) {
+            orderBy[sortBy] = order === 'asc' ? 'asc' : 'desc';
+        }
+        else {
+            orderBy.createdAt = 'desc';
+        }
+        const pageNum = Math.max(1, Number(page) || 1);
+        const limitNum = Math.max(1, Number(limit) || 20);
+        const [data, total] = await Promise.all([
+            this.prisma.booking.findMany({
+                where,
+                include: {
+                    hotel: true,
+                    user: true,
+                    roomType: true,
+                    room: true,
+                    payment: true,
+                    guests: true,
+                },
+                orderBy,
+                skip: (pageNum - 1) * limitNum,
+                take: limitNum,
+            }),
+            this.prisma.booking.count({ where })
+        ]);
+        return {
+            data,
+            meta: {
+                total,
+                page: pageNum,
+                last_page: Math.ceil(total / limitNum),
+                limit: limitNum
+            }
+        };
+    }
 };
 exports.BookingsService = BookingsService;
 __decorate([
@@ -746,6 +859,7 @@ exports.BookingsService = BookingsService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         notifications_service_1.NotificationsService,
-        inventory_service_1.InventoryService])
+        inventory_service_1.InventoryService,
+        events_gateway_1.EventsGateway])
 ], BookingsService);
 //# sourceMappingURL=bookings.service.js.map

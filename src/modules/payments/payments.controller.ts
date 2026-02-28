@@ -42,6 +42,17 @@ export class PaymentsController {
     return this.svc.createOmiseCharge(body.amount, body.token, body.description);
   }
 
+  @Post('omise/promptpay')
+  async omisePromptPay(@Body() body: { amount: number; description?: string; bookingId: string }) {
+    if (!body.amount || !body.bookingId) throw new Error('Amount and BookingId are required');
+    return this.svc.createOmisePromptPaySource(body.amount, body.bookingId, body.description);
+  }
+
+  @Post('omise/webhook')
+  async omiseWebhook(@Body() payload: any) {
+    return this.svc.handleOmiseWebhook(payload);
+  }
+
   @Post(':bookingId/capture')
   capture(@Param('bookingId') bookingId: string) {
     return { bookingId, status: 'captured' };

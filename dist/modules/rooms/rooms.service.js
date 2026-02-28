@@ -12,9 +12,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.RoomsService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../common/prisma/prisma.service");
+const events_gateway_1 = require("../events/events.gateway");
 let RoomsService = class RoomsService {
-    constructor(prisma) {
+    constructor(prisma, eventsGateway) {
         this.prisma = prisma;
+        this.eventsGateway = eventsGateway;
     }
     async findAll(search, hotelId) {
         const where = {
@@ -188,6 +190,12 @@ let RoomsService = class RoomsService {
         });
     }
     async updateStatus(id, status, userId, note) {
+        const room = await this.prisma.room.findUnique({
+            where: { id },
+            include: { roomType: true }
+        });
+        if (!room)
+            throw new common_1.NotFoundException('Room not found');
         await this.prisma.roomStatusLog.create({
             data: {
                 roomId: id,
@@ -196,15 +204,23 @@ let RoomsService = class RoomsService {
                 note: note
             }
         });
-        return this.prisma.room.update({
+        const updatedRoom = await this.prisma.room.update({
             where: { id },
             data: { status }
         });
+        this.eventsGateway.broadcastToHotel(room.roomType.hotelId, 'roomStatusChanged', {
+            roomId: room.id,
+            roomNumber: room.roomNumber,
+            status: status,
+            updatedBy: userId
+        });
+        return updatedRoom;
     }
 };
 exports.RoomsService = RoomsService;
 exports.RoomsService = RoomsService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        events_gateway_1.EventsGateway])
 ], RoomsService);
 //# sourceMappingURL=rooms.service.js.map

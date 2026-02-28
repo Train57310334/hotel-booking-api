@@ -159,6 +159,137 @@ export class PaymentsService {
     }
   }
 
+  async createOmisePromptPaySource(amount: number, bookingId: string, description?: string) {
+    const booking = await this.prisma.booking.findUnique({
+        where: { id: bookingId },
+        include: { hotel: true }
+    });
+    if (!booking) throw new BadRequestException('Booking not found');
+    if (!booking.hotel.hasOnlinePayment) {
+        throw new BadRequestException('Your current plan does not support online payments. Please upgrade to PRO or use Bank Transfer/Cash.');
+    }
+
+    const { publicKey, secretKey } = await this.settingsService.getOmiseConfig();
+    const omise = require('omise')({ publicKey, secretKey });
+
+    try {
+        // 1. Create Source (PromptPay)
+        const source = await omise.sources.create({
+            amount: Math.round(amount * 100),
+            currency: 'thb',
+            type: 'promptpay'
+        });
+
+        // 2. Create Charge associated with the Source
+        const charge = await omise.charges.create({
+            amount: Math.round(amount * 100),
+            currency: 'thb',
+            source: source.id,
+            description: description || `Booking ID: ${bookingId}`,
+            metadata: { bookingId } // Pass booking ID for Webhook mapping
+        });
+
+        // 3. Upsert Payment Record (Pending)
+        await this.prisma.payment.upsert({
+            where: { bookingId },
+            update: {
+                status: 'created',
+                intentId: charge.id, // we store charge ID as the reference intent
+                amount: amount,
+                provider: 'omise',
+                method: 'promptpay',
+                chargeId: charge.id
+            },
+            create: {
+                bookingId: bookingId,
+                amount: amount,
+                currency: 'thb',
+                provider: 'omise',
+                status: 'created',
+                intentId: charge.id,
+                chargeId: charge.id,
+                method: 'promptpay'
+            }
+        });
+
+        // The Charge object contains the 'authorize_uri' which will contain the actual QR Code URL inside 'scannable_code'
+        // For promptpay, charge.source.scannable_code.image.download_uri is the actual SVG string of the QR
+        return {
+            chargeId: charge.id,
+            qrCodeUrl: charge.source?.scannable_code?.image?.download_uri,
+            amount: amount,
+            sourceId: source.id
+        };
+
+    } catch (error: any) {
+        console.error('Omise PromptPay Error:', error);
+        throw new BadRequestException(`PromptPay Generation Failed: ${error.message}`);
+    }
+  }
+
+  async handleOmiseWebhook(payload: any) {
+    // Basic verification: We extract the event type and object
+    if (!payload || payload.object !== 'event') {
+        return { received: true };
+    }
+
+    const eventData = payload.data;
+    const type = payload.key; // e.g., 'charge.complete'
+
+    if (type === 'charge.complete' && eventData.status === 'successful') {
+        const metadata = eventData.metadata;
+        
+        if (metadata && metadata.bookingId) {
+            const bookingId = metadata.bookingId;
+            console.log(`✅ Omise Webhook: Payment Success for Booking ${bookingId}`);
+
+            // 1. Update Booking Status Atomically
+            const updateResult = await this.prisma.booking.updateMany({
+                where: { id: bookingId, status: { not: 'confirmed' } },
+                data: { status: 'confirmed' }
+            });
+
+            if (updateResult.count === 0) {
+                 console.log(`Booking ${bookingId} already confirmed or not found.`);
+            } else {
+                 // WE were the ones to confirm it, send email.
+                 const updatedBooking = await this.prisma.booking.findUnique({
+                      where: { id: bookingId },
+                      include: { hotel: true, roomType: true, guests: true, payment: true }
+                 });
+
+                 if (updatedBooking) {
+                      try {
+                          await this.notificationsService.sendPaymentSuccessEmail(updatedBooking as any);
+                      } catch (emailErr) {
+                          console.error('Failed to send payment success email via Omise Webhook', emailErr);
+                      }
+                 }
+            }
+
+            // 2. Update Payment Record
+            await this.prisma.payment.upsert({
+                where: { bookingId },
+                update: {
+                    status: 'captured',
+                    chargeId: eventData.id
+                },
+                create: {
+                    amount: eventData.amount / 100, // Omise is in cents
+                    currency: eventData.currency,
+                    provider: 'omise',
+                    status: 'captured',
+                    chargeId: eventData.id,
+                    bookingId: bookingId,
+                    method: eventData.source?.type || 'omise'
+                }
+            });
+        }
+    }
+
+    return { received: true };
+  }
+
   async updateStatus(id: string, status: 'captured' | 'failed') {
     return this.prisma.payment.update({
       where: { id },

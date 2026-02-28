@@ -1,7 +1,9 @@
 import { PrismaService } from '@/common/prisma/prisma.service';
+import { EventsGateway } from '@/modules/events/events.gateway';
 export declare class RoomsService {
     private prisma;
-    constructor(prisma: PrismaService);
+    private eventsGateway;
+    constructor(prisma: PrismaService, eventsGateway: EventsGateway);
     findAll(search?: string, hotelId?: string): Promise<({
         roomType: {
             id: string;
@@ -18,10 +20,12 @@ export declare class RoomsService {
             maxAdults: number;
             maxChildren: number;
             isFeatured: boolean;
+            icalUrl: string | null;
             deletedAt: Date | null;
         };
         bookings: {
             id: string;
+            notes: string | null;
             createdAt: Date;
             updatedAt: Date;
             userId: string | null;
@@ -38,6 +42,7 @@ export declare class RoomsService {
             leadEmail: string;
             leadPhone: string;
             specialRequests: string | null;
+            source: string | null;
             roomId: string | null;
         }[];
         statusLogs: {
@@ -91,6 +96,7 @@ export declare class RoomsService {
             maxAdults: number;
             maxChildren: number;
             isFeatured: boolean;
+            icalUrl: string | null;
             deletedAt: Date | null;
         };
     } & {
