@@ -2,11 +2,17 @@ import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/co
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
 import { invalidateUserCache } from './jwt.strategy';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class AuthService {
-  constructor(private prisma: PrismaService, private jwtService: JwtService) {}
+  constructor(
+    private prisma: PrismaService, 
+    private jwtService: JwtService,
+    private notificationsService: NotificationsService
+  ) {}
 
   // ✅ Register
   async register(data: { email: string; password: string; name?: string; phone?: string }) {
@@ -140,33 +146,76 @@ export class AuthService {
   }
 
   // ✅ Impersonate (For Super Admins)
-  async impersonate(targetHotelId: string) {
-    // 1. Find the owner of this hotel
-    const hotel = await this.prisma.hotel.findUnique({
-        where: { id: targetHotelId },
-        include: { owner: true }
-    });
-
-    if (!hotel || !hotel.owner) {
-        throw new UnauthorizedException('Target hotel or owner not found');
-    }
-
-    const targetUser = await this.prisma.user.findUnique({
-        where: { id: hotel.owner.id },
+  async impersonate(adminId: string, targetHotelId: string) {
+    const adminUser = await this.prisma.user.findUnique({
+        where: { id: adminId },
         include: { roleAssignments: true }
     });
 
-    if (!targetUser) {
-        throw new UnauthorizedException('Target user not found');
+    if (!adminUser || !adminUser.roles.includes('platform_admin')) {
+        throw new UnauthorizedException('Only platform admins can impersonate');
     }
 
-    // 2. Generate a token AS IF they just logged in
-    const token = this.generateToken(targetUser, targetHotelId);
+    // Verify hotel exists
+    const hotel = await this.prisma.hotel.findUnique({
+        where: { id: targetHotelId }
+    });
+
+    if (!hotel) {
+         throw new UnauthorizedException('Target hotel not found');
+    }
+
+    // Generate a token AS IF they just logged in, but bound to this hotel
+    const token = this.generateToken(adminUser, targetHotelId);
 
     // Clear any stale JWT cache for this user so fresh permissions are loaded
-    invalidateUserCache(targetUser.id);
+    invalidateUserCache(adminUser.id);
 
-    return { user: targetUser, token, isImpersonating: true };
+    return { user: adminUser, token, isImpersonating: true };
+  }
+
+  // ✅ Forgot Password
+  async forgotPassword(email: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) return { success: true }; // Silently return true to prevent email enumeration
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+    const expires = new Date(Date.now() + 3600000); // 1 hour
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { resetPasswordToken: hashedToken, resetPasswordExpires: expires },
+    });
+
+    await this.notificationsService.sendPasswordResetEmail(user, resetToken);
+    return { success: true };
+  }
+
+  // ✅ Reset Password
+  async resetPassword(token: string, newPassword: string) {
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    const user = await this.prisma.user.findFirst({
+      where: {
+        resetPasswordToken: hashedToken,
+        resetPasswordExpires: { gt: new Date() },
+      },
+    });
+
+    if (!user) throw new UnauthorizedException('Invalid or expired password reset token');
+
+    const newHash = await bcrypt.hash(newPassword, 10);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: newHash,
+        resetPasswordToken: null,
+        resetPasswordExpires: null,
+      },
+    });
+
+    return { success: true, message: 'Password successfully reset' };
   }
 
   // ✅ Helper: JWT Token

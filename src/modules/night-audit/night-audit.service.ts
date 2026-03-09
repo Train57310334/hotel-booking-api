@@ -28,6 +28,7 @@ export class NightAuditService {
   /**
    * 1. Mark 'confirmed' bookings as 'no_show' if check-in date passed
    */
+  // ✅ BUG #14 FIX: Restore inventory for no-show bookings
   async autoMarkNoShow() {
     const today = new Date();
     today.setHours(0, 0, 0, 0); // Midnight start of today
@@ -53,16 +54,35 @@ export class NightAuditService {
         data: { status: 'no_show' }
       });
 
-      // Release Room inventory? 
-      // Operational Decision: Usually No-Show keeps the room occupied until explicitly cancelled or released by Manager?
-      // Opera usually keeps it as No Show but holds the room inventory for the night (revenue recognized).
-      // But for next day availability, if they didn't show up, should we release?
-      // Let's release the room status to DIRTY or CLEAN?
-      // Actually strictly speaking, checking out early releases inventory.
-      // No Show means they didn't come. 
-      // For now, let's just update status.
+      // ✅ BUG #14 FIX: Release inventory for no-show bookings so rooms can be re-sold
+      for (const booking of lateBookings) {
+        try {
+          const dateRange: Date[] = [];
+          let d = new Date(booking.checkIn);
+          while (d < new Date(booking.checkOut)) {
+            dateRange.push(new Date(d));
+            d.setDate(d.getDate() + 1);
+          }
+
+          const totalRooms = await this.prisma.room.count({ where: { roomTypeId: booking.roomTypeId, deletedAt: null } });
+          for (const date of dateRange) {
+            const record = await this.prisma.inventoryCalendar.findUnique({
+              where: { roomTypeId_date: { roomTypeId: booking.roomTypeId, date } }
+            });
+            if (record) {
+              const restored = Math.min(record.allotment + 1, totalRooms > 0 ? totalRooms : record.allotment + 1);
+              await this.prisma.inventoryCalendar.update({
+                where: { roomTypeId_date: { roomTypeId: booking.roomTypeId, date } },
+                data: { allotment: restored }
+              });
+            }
+          }
+        } catch (e) {
+          this.logger.error(`Failed to restore inventory for no-show booking ${booking.id}`, e);
+        }
+      }
       
-      this.logger.log(`Updated ${result.count} bookings to NO_SHOW.`);
+      this.logger.log(`Updated ${result.count} bookings to NO_SHOW and released their inventory.`);
     } else {
        this.logger.log('No bookings to mark as NO_SHOW.');
     }
@@ -83,16 +103,7 @@ export class NightAuditService {
 
       this.logger.log(`📊 Generating Snapshot for ${yesterday.toISOString().split('T')[0]}`);
 
-      // 1. Total Physical Rooms (Denominator for Occupancy/RevPAR)
-      const totalRooms = await this.prisma.room.count({
-          where: { deletedAt: null }
-      });
-
-      // 2. Find Occupied Bookings (Active during yesterday)
-      // Status: CHECKED_IN (Occupied), CONFIRMED (Maybe late arrival?), NO_SHOW (Revenue but no occupancy)
-      // For standard 'Occupancy %', we usually count physically occupied rooms => CHECKED_IN.
-      // But CONFIRMED rooms that haven't arrived are blocked from inventory, so technically "Occupied" from availability standpoint?
-      // Let's stick to: CHECKED_IN = Occupied.
+      // 1. Find Occupied Bookings for Yesterday (CHECKED_IN status with overlap)
       const activeBookings = await this.prisma.booking.findMany({
           where: {
               status: 'checked_in',
@@ -100,7 +111,23 @@ export class NightAuditService {
               checkIn: { lte: yesterdayEnd },
               checkOut: { gt: yesterday }
           },
-          include: { roomType: true }
+          select: {
+            id: true,
+            hotelId: true,
+            checkIn: true,
+            checkOut: true,
+            roomTypeId: true,
+            totalAmount: true,
+          }
+      });
+
+      // ✅ BUG #8 FIX: Count rooms scoped to hotels that had active bookings — not all hotels
+      const hotelIds = [...new Set(activeBookings.map(b => b.hotelId).filter(Boolean))];
+      const totalRooms = await this.prisma.room.count({
+          where: { 
+            deletedAt: null,
+            roomType: hotelIds.length > 0 ? { hotelId: { in: hotelIds } } : undefined
+          }
       });
 
       const occupiedRooms = activeBookings.length;

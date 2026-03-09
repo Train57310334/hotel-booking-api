@@ -45,8 +45,11 @@ export class StaffService {
       let user = await this.prisma.user.findUnique({ where: { email: data.email } });
 
       if (!user) {
-          // Create new user
-          const hashedPassword = await bcrypt.hash(data.password || '123456', 10);
+          // ✅ BUG FIX: Require an explicit password — never create an account with a hardcoded default password
+          if (!data.password) {
+              throw new BadRequestException('A password is required to create a new staff account.');
+          }
+          const hashedPassword = await bcrypt.hash(data.password, 10);
           user = await this.prisma.user.create({
               data: {
                   email: data.email,

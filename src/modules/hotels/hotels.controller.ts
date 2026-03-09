@@ -68,8 +68,15 @@ export class HotelsController {
 
   @Put(':hotelId')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('owner', 'admin')
+  @Roles('owner', 'admin', 'hotel_admin')
   update(@Param('hotelId') id: string, @Body() body: any) {
     return this.hotels.update(id, body);
+  }
+
+  @Get(':id/payment-config')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'hotel_admin', 'platform_admin')
+  getPaymentConfig(@Param('id') id: string) {
+    return this.hotels.getPaymentConfig(id);
   }
 }

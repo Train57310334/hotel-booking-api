@@ -6,6 +6,7 @@ import { SettingsService } from '../settings/settings.service';
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
+  private cachedTransporter: any = null; // ✅ Cache SMTP transporter to avoid reconnecting per email
 
   constructor(
     private prisma: PrismaService,
@@ -48,19 +49,21 @@ export class NotificationsService {
   }
 
   // 🚫 3. การยกเลิกการจอง
+  // ✅ BUG FIX: copy-paste error — was logging 'confirmed' for cancellation events
   async sendCancellationEmail(booking: any) {
-    const subject = `Booking Cancelled - ${booking.hotel.name}`;
+    const subject = `Booking Cancelled - ${booking.hotel?.name || 'Hotel'}`;
     const html = this.templateCancellation(booking);
     await this.sendEmail(booking.leadEmail, subject, html);
-    await this.createNotification('New Booking', `Booking ${booking.id.slice(-6)} confirmed for ${booking.leadName}`, 'success');
+    await this.createNotification('Booking Cancelled', `Booking ${booking.id.slice(-6)} cancelled for ${booking.leadName}`, 'warning');
   }
 
   // 🕒 4. เตือนก่อนเข้าพัก 1 วัน
+  // ✅ BUG FIX: copy-paste error — was logging 'confirmed' for pre-checkin reminder
   async sendPreCheckinReminder(booking: any) {
-    const subject = `Your Stay Starts Tomorrow - ${booking.hotel.name}`;
+    const subject = `Your Stay Starts Tomorrow - ${booking.hotel?.name || 'Hotel'}`;
     const html = this.templatePreCheckin(booking);
     await this.sendEmail(booking.leadEmail, subject, html);
-    await this.createNotification('New Booking', `Booking ${booking.id.slice(-6)} confirmed for ${booking.leadName}`, 'success');
+    await this.createNotification('Check-in Reminder', `Check-in reminder sent to ${booking.leadName}`, 'info');
   }
 
   // ⭐ 5. ขอ Feedback หลัง Check-out
@@ -71,11 +74,33 @@ export class NotificationsService {
     // await this.createNotification('Feedback', `Sent feedback request to ${booking.leadName}`, 'info');
   }
 
+  // 🔑 6. ลืมรหัสผ่าน
+  async sendPasswordResetEmail(user: any, token: string) {
+    const subject = `Password Reset Request - ${await this.settingsService.get('siteName', 'BookingKub')}`;
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/reset-password?token=${token}`;
+    
+    const html = `
+      <div style="background-color: #f1f5f9; padding: 40px 20px; font-family: sans-serif;">
+        <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; padding: 40px; text-align: center;">
+          <h1 style="color: #0f172a;">Password Reset</h1>
+          <p style="color: #334155;">Hello ${user.name || user.email},</p>
+          <p style="color: #334155;">You requested a password reset. Please click the button below to choose a new password. This link will expire in 1 hour.</p>
+          <a href="${resetUrl}" style="display: inline-block; background-color: #0f172a; color: white; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 20px;">Reset Password</a>
+          <p style="color: #94a3b8; font-size: 12px; margin-top: 40px;">If you didn't request this, you can safely ignore this email.</p>
+        </div>
+      </div>
+    `;
+    await this.sendEmail(user.email, subject, html);
+  }
+
   // --------------------------------------------------------------------
   // 🔧 UTILITIES
   // --------------------------------------------------------------------
 
   private async getTransporter() {
+    // ✅ BUG FIX: Cache the transporter so we don't create a new SMTP connection for every single email
+    if (this.cachedTransporter) return this.cachedTransporter;
+
     // Fetch dynamic settings
     const host = await this.settingsService.get('smtpHost', 'SMTP_HOST');
     const port = await this.settingsService.get('smtpPort', 'SMTP_PORT');
@@ -87,12 +112,13 @@ export class NotificationsService {
         return null;
     }
 
-    return nodemailer.createTransport({
+    this.cachedTransporter = nodemailer.createTransport({
       host,
       port: Number(port) || 587,
       secure: false, // true for 465, false for other ports
       auth: { user, pass },
     });
+    return this.cachedTransporter;
   }
 
   private async sendEmail(to: string, subject: string, html: string) {

@@ -6,6 +6,7 @@ import { AuthController } from './auth.controller';
 import { PrismaService } from '@/common/prisma/prisma.service';
 import { JwtStrategy } from './jwt.strategy';
 import { RolesGuard } from '@/modules/roles/roles.guard';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { RolesGuard } from '@/modules/roles/roles.guard';
       secret: process.env.JWT_SECRET || 'change_this_secret_key',
       signOptions: { expiresIn: '7d' },
     }),
+    NotificationsModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, PrismaService, JwtStrategy, RolesGuard],

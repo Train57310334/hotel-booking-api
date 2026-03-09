@@ -127,6 +127,30 @@ export class InventoryService {
     }
   }
 
+  // ✅ BUG #4 FIX: Restore inventory when a booking is cancelled
+  async restoreInventory(roomTypeId: string, dateRange: Date[], tx?: any) {
+    const prisma = tx || this.prisma;
+    const totalRooms = await prisma.room.count({
+      where: { roomTypeId, deletedAt: null }
+    });
+
+    for (const date of dateRange) {
+      const record = await prisma.inventoryCalendar.findUnique({
+        where: { roomTypeId_date: { roomTypeId, date } },
+      });
+
+      if (record) {
+        // Restore allotment, but cap at totalRooms to avoid overflow
+        const restored = Math.min(record.allotment + 1, totalRooms > 0 ? totalRooms : record.allotment + 1);
+        await prisma.inventoryCalendar.update({
+          where: { roomTypeId_date: { roomTypeId, date } },
+          data: { allotment: restored },
+        });
+      }
+      // If no record exists, inventory is at full capacity, nothing to restore
+    }
+  }
+
   async checkAvailability(roomTypeId: string, startDate: string, endDate: string) {
     const start = new Date(startDate);
     const end = new Date(endDate);

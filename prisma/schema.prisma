@@ -35,6 +35,10 @@ model User {
   notes       String? // Staff notes
   preferences String? // JSON string for dietary, room preferences
 
+  // Password Reset
+  resetPasswordToken   String?
+  resetPasswordExpires DateTime?
+
   bookings        Booking[]
   reviews         Review[]
   roleAssignments RoleAssignment[]
@@ -88,12 +92,36 @@ model Hotel {
   contactPhone    String?
   heroTitle       String?
   heroDescription String?
+  checkInTime     String? // e.g. "14:00"
+  checkOutTime    String? // e.g. "12:00"
+  facebookUrl     String?
+  instagramUrl    String?
+  twitterUrl      String?
+  footerDescription String?
+
+  // SEO & Marketing
+  seoTitle          String?  // <title> tag override (max 60 chars)
+  seoDescription    String?  // <meta description> (max 160 chars)
+  seoKeywords       String?  // comma-separated keywords
+  ogImage           String?  // Open Graph image URL for social sharing
+  canonicalUrl      String?  // e.g. https://grandhotel.com
+  customDomain      String?  // e.g. grandhotel.com (for robots/sitemap)
+  robotsIndex       Boolean  @default(true)  // false = noindex,nofollow
+  googleAnalyticsId String?  // GA4 Measurement ID: G-XXXXXXX
+  googleTagManagerId String? // GTM-XXXXXX
+  facebookPixelId   String?  // Facebook Pixel ID
+  googleAdsId       String?  // Google Ads Conversion ID: AW-XXXXXXX
+  analyticsEmbedUrl String?  // Looker Studio embed URL for analytics dashboard
 
   // Payment Configuration
   promptPayId       String?
   bankName          String?
   bankAccountName   String?
   bankAccountNumber String?
+  stripePublicKey   String?
+  stripeSecretKey   String?
+  omisePublicKey    String?
+  omiseSecretKey    String?
 
   // Subscription
   subscriptionEnd DateTime?

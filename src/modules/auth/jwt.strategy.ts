@@ -80,10 +80,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     let roles = user.roles;
     if (isImpersonating) {
-       // Hide platform_admin so the frontend correctly loads the hotel dashboard
-       roles = roles.filter(r => r !== 'platform_admin');
-       if (!roles.includes('hotel_admin')) {
-           roles.push('hotel_admin');
+       // Keep platform_admin so their identity remains Super Admin, but give them access to the hotel
+       if (!roles.includes('owner')) {
+           roles.push('owner');
        }
     }
 

@@ -81,9 +81,14 @@ export class SearchService {
         },
         roomTypes: {
           include: {
+            // ✅ BUG FIX: Don't expose full booking data in public search results (data leak + performance)
+            // We only need room IDs to verify room count — bookings are checked via the where clause above
             rooms: {
-              include: {
-                bookings: true
+              where: { deletedAt: null }, // ✅ Exclude soft-deleted rooms
+              select: {
+                id: true,
+                roomNumber: true,
+                status: true,
               }
             }
           }
@@ -92,7 +97,7 @@ export class SearchService {
     });
 
     // Calculate actual minPrice based on RoomType base prices
-    const computed = hotels.map(h => {
+    const computed = (hotels as any[]).map(h => {
       const validPrices = h.roomTypes
           .filter(rt => rt.rooms && rt.rooms.length > 0)
           .map(rt => rt.basePrice || 0)

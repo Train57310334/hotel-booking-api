@@ -48,21 +48,31 @@ export class ReportsService {
   }
 
   async getOccupancy(hotelId: string, from: Date, to: Date) {
-    // Ideally get total rooms from Hotel Room count
-    const totalRooms = await this.prisma.room.count({ where: { roomType: { hotelId } } }) || 50; 
+    // ✅ BUG FIX: Use hotel-scoped totalRooms, not hardcoded 50
+    const totalRooms = await this.prisma.room.count({
+      where: { roomType: { hotelId }, deletedAt: null }
+    });
     
+    // ✅ BUG FIX: N+1 query fix — fetch all overlapping bookings ONCE instead of per-day queries
+    const bookings = await this.prisma.booking.findMany({
+      where: {
+        hotelId,
+        status: { in: ['confirmed', 'checked_in'] },
+        checkIn: { lt: to },
+        checkOut: { gt: from }
+      },
+      select: { checkIn: true, checkOut: true }
+    });
+
     const days = [];
     for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
-        const dayStr = d.toISOString().split('T')[0];
+        const currentDate = new Date(d);
+        const dayStr = currentDate.toISOString().split('T')[0];
         
-        const occupied = await this.prisma.booking.count({
-            where: {
-                hotelId,
-                status: { in: ['confirmed', 'checked_in'] },
-                checkIn: { lte: d },
-                checkOut: { gt: d }
-            }
-        });
+        // Count in-memory from pre-fetched bookings
+        const occupied = bookings.filter(b =>
+          new Date(b.checkIn) <= currentDate && new Date(b.checkOut) > currentDate
+        ).length;
         
         days.push({
             date: dayStr,
@@ -93,17 +103,19 @@ export class ReportsService {
   }
 
   async getSummary(hotelId: string, from: Date, to: Date) {
+      // ✅ BUG FIX: Use checkIn date range for revenue (matches what guest actually paid for)
+      // Using createdAt would include bookings created in range but for different stay dates
       const revenue = await this.prisma.booking.aggregate({
           _sum: { totalAmount: true },
           where: { 
               hotelId,
-              createdAt: { gte: from, lte: to },
+              checkIn: { gte: from, lte: to },
               status: { not: 'cancelled' }
           }
       });
       
       const bookings = await this.prisma.booking.count({
-          where: { hotelId, createdAt: { gte: from, lte: to } }
+          where: { hotelId, checkIn: { gte: from, lte: to } }
       });
 
       const expenses = await (this.prisma as any).expense.aggregate({

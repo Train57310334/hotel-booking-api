@@ -38,7 +38,7 @@ export class PaymentsService {
     const normalizedOnline = payments.map(p => ({
         id: p.id,
         bookingId: p.bookingId,
-        amount: (p.status === 'created' || p.status === 'pending') ? p.amount / 100 : p.amount, // Fix inconsistent unit storage
+        amount: p.amount, // Always stored in THB (baht)
         provider: p.provider,
         method: p.method || p.provider,
         status: p.status === 'created' ? 'pending' : p.status,
@@ -68,6 +68,8 @@ export class PaymentsService {
   }
 
   async createPaymentIntent(amount: number, currency = 'thb', description?: string, bookingId?: string) {
+    let secretKey = '';
+    
     if (bookingId) {
         const booking = await this.prisma.booking.findUnique({
              where: { id: bookingId },
@@ -76,9 +78,16 @@ export class PaymentsService {
         if (booking && !booking.hotel.hasOnlinePayment) {
             throw new BadRequestException('Your current plan does not support online payments. Please upgrade to PRO or use Bank Transfer/Cash.');
         }
+        if ((booking?.hotel as any)?.stripeSecretKey) {
+            secretKey = (booking.hotel as any).stripeSecretKey;
+        }
     }
 
-    const { secretKey } = await this.settingsService.getStripeConfig();
+    if (!secretKey) {
+        const config = await this.settingsService.getStripeConfig();
+        secretKey = config.secretKey;
+    }
+
     const stripe = new Stripe(secretKey, { apiVersion: '2024-06-20' as any });
 
     const paymentIntent = await stripe.paymentIntents.create({
@@ -92,6 +101,7 @@ export class PaymentsService {
     });
 
     // Create Payment Record as 'created' (Pending)
+    // Amount stored in THB (baht), NOT in satang. The *100 conversion is only for Stripe API calls.
     if (bookingId) {
         // Check if exists to avoid unique constraint error if user retries
         const existing = await this.prisma.payment.findUnique({ where: { bookingId } });
@@ -100,7 +110,7 @@ export class PaymentsService {
                  where: { bookingId },
                  data: { 
                      intentId: paymentIntent.id, 
-                     amount: Math.round(amount * 100),
+                     amount: amount, // Store in THB
                      status: 'created'
                  }
              });
@@ -108,7 +118,7 @@ export class PaymentsService {
              await this.prisma.payment.create({
                  data: {
                      bookingId,
-                     amount: Math.round(amount * 100),
+                     amount: amount, // Store in THB
                      currency,
                      provider: 'stripe',
                      status: 'created',
@@ -126,6 +136,9 @@ export class PaymentsService {
   }
 
   async createOmiseCharge(amount: number, token: string, description?: string, bookingId?: string) {
+    let publicKey = '';
+    let secretKey = '';
+
     if (bookingId) {
         const booking = await this.prisma.booking.findUnique({
              where: { id: bookingId },
@@ -134,10 +147,17 @@ export class PaymentsService {
         if (booking && !booking.hotel.hasOnlinePayment) {
             throw new BadRequestException('Your current plan does not support online payments. Please upgrade to PRO or use Bank Transfer/Cash.');
         }
+        if ((booking?.hotel as any)?.omisePublicKey && (booking?.hotel as any)?.omiseSecretKey) {
+            publicKey = (booking.hotel as any).omisePublicKey;
+            secretKey = (booking.hotel as any).omiseSecretKey;
+        }
     }
 
-    // 1. Fetch Omise Keys from Settings Service
-    const { publicKey, secretKey } = await this.settingsService.getOmiseConfig();
+    if (!publicKey || !secretKey) {
+        const config = await this.settingsService.getOmiseConfig();
+        publicKey = config.publicKey;
+        secretKey = config.secretKey;
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const omise = require('omise')({
@@ -169,7 +189,17 @@ export class PaymentsService {
         throw new BadRequestException('Your current plan does not support online payments. Please upgrade to PRO or use Bank Transfer/Cash.');
     }
 
-    const { publicKey, secretKey } = await this.settingsService.getOmiseConfig();
+    let publicKey = '';
+    let secretKey = '';
+    if ((booking.hotel as any).omisePublicKey && (booking.hotel as any).omiseSecretKey) {
+        publicKey = (booking.hotel as any).omisePublicKey;
+        secretKey = (booking.hotel as any).omiseSecretKey;
+    } else {
+        const config = await this.settingsService.getOmiseConfig();
+        publicKey = config.publicKey;
+        secretKey = config.secretKey;
+    }
+
     const omise = require('omise')({ publicKey, secretKey });
 
     try {
@@ -324,11 +354,23 @@ export class PaymentsService {
     const { secretKey } = await this.settingsService.getStripeConfig();
     const stripe = new Stripe(secretKey, { apiVersion: '2024-06-20' as any });
     
+    // ✅ BUG #1 FIX: Verify webhook signature to prevent forged payment events
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
     let event;
-    try {
-       event = JSON.parse(payload.toString());
-    } catch (err) {
-       throw new BadRequestException(`Webhook Error: ${err.message}`);
+    if (webhookSecret && signature) {
+      try {
+        event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
+      } catch (err) {
+        throw new BadRequestException(`Webhook signature verification failed: ${err.message}`);
+      }
+    } else {
+      // Fallback for local dev without webhook secret (log a warning)
+      console.warn('⚠️ STRIPE_WEBHOOK_SECRET not set — skipping signature verification. DO NOT use in production!');
+      try {
+        event = JSON.parse(payload.toString());
+      } catch (err) {
+        throw new BadRequestException(`Webhook Error: ${err.message}`);
+      }
     }
 
     if (event.type === 'payment_intent.succeeded') {
@@ -362,6 +404,7 @@ export class PaymentsService {
             });
 
             // 2. Update Payment Record to Captured
+            // ✅ BUG #2 FIX: Store amount in THB (baht), not satang
             await this.prisma.payment.upsert({
                 where: { bookingId },
                 update: {
@@ -369,7 +412,7 @@ export class PaymentsService {
                     intentId: paymentIntent.id
                 },
                 create: {
-                    amount: paymentIntent.amount / 100,
+                    amount: paymentIntent.amount / 100, // Stripe sends satang → convert to THB
                     currency: paymentIntent.currency,
                     provider: 'stripe',
                     status: 'captured',

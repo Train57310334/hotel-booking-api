@@ -7,6 +7,17 @@ import { EventsGateway } from '@/modules/events/events.gateway';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
+// Helper: generate date range array [checkIn, checkOut) exclusive of checkOut
+function buildDateRange(checkIn: Date, checkOut: Date): Date[] {
+  const range: Date[] = [];
+  let d = new Date(checkIn);
+  while (d < checkOut) {
+    range.push(new Date(d));
+    d.setDate(d.getDate() + 1);
+  }
+  return range;
+}
+
 @Injectable()
 export class BookingsService {
   constructor(
@@ -451,21 +462,32 @@ export class BookingsService {
   }
 
   /** 👤 การจองของลูกค้า */
+  // ✅ BUG #5 FIX: Include "active" stay (checkIn passed but checkOut not yet)
   async getMyBookings(userId: string) {
     if (!userId) throw new NotFoundException('User ID is required');
     const now = new Date();
 
-    const [upcoming, past] = await Promise.all([
+    const [upcoming, active, past] = await Promise.all([
+      // Future bookings (check-in is in the future)
       this.prisma.booking.findMany({
         where: { userId, checkIn: { gte: now } },
         include: { hotel: true, roomType: true, ratePlan: true, payment: true },
+        orderBy: { checkIn: 'asc' },
       }),
+      // Active stays (checked-in but not yet checked out)
+      this.prisma.booking.findMany({
+        where: { userId, checkIn: { lt: now }, checkOut: { gte: now } },
+        include: { hotel: true, roomType: true, ratePlan: true, payment: true },
+        orderBy: { checkIn: 'asc' },
+      }),
+      // Past bookings (already checked out)
       this.prisma.booking.findMany({
         where: { userId, checkOut: { lt: now } },
         include: { hotel: true, roomType: true, ratePlan: true, payment: true },
+        orderBy: { checkOut: 'desc' },
       }),
     ]);
-    return { upcoming, past };
+    return { upcoming, active, past };
   }
 
   /** 💳 ยืนยันการชำระเงิน */
@@ -485,11 +507,19 @@ export class BookingsService {
   }
 
   /** ❌ ยกเลิกการจอง */
+  // ✅ BUG #4 FIX: Restore inventory when cancelling
+  // ✅ BUG #10 FIX: Throw ForbiddenException instead of NotFoundException for unauthorized
   async cancelBooking(bookingId: string, userId?: string) {
     const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
     if (!booking) throw new NotFoundException('Booking not found');
     if (userId && booking.userId !== userId)
-      throw new NotFoundException('Unauthorized access');
+      throw new ForbiddenException('You do not have permission to cancel this booking');
+
+    // Only restore inventory if booking was active (not already cancelled/checked_out)
+    if (['pending', 'confirmed', 'checked_in'].includes(booking.status)) {
+      const dateRange = buildDateRange(new Date(booking.checkIn), new Date(booking.checkOut));
+      await this.inventoryService.restoreInventory(booking.roomTypeId, dateRange);
+    }
 
     await this.notificationsService.sendCancellationEmail(booking);
 
@@ -500,6 +530,7 @@ export class BookingsService {
   }
 
   /** 👮 Admin: ยกเลิกการจอง (ไม่ต้องเช็ค Owner) */
+  // ✅ BUG #4 FIX: Restore inventory on admin cancel too
   async cancelBookingByAdmin(bookingId: string, hotelId: string) {
     const booking = await this.prisma.booking.findUnique({
       where: { id: bookingId },
@@ -507,6 +538,12 @@ export class BookingsService {
     });
     if (!booking) throw new NotFoundException('Booking not found');
     if (booking.hotelId !== hotelId) throw new ForbiddenException('Booking does not belong to this hotel');
+
+    // Only restore inventory if booking was active
+    if (['pending', 'confirmed', 'checked_in'].includes(booking.status)) {
+      const dateRange = buildDateRange(new Date(booking.checkIn), new Date(booking.checkOut));
+      await this.inventoryService.restoreInventory(booking.roomTypeId, dateRange);
+    }
 
     await this.notificationsService.sendCancellationEmail(booking);
 
@@ -646,17 +683,31 @@ export class BookingsService {
     }
 
     // Default status update (e.g. pending -> confirmed, or cancelled)
+    // ✅ BUG #4 FIX: Restore inventory if cancelling via generic status update
+    if (status === 'cancelled' && ['pending', 'confirmed', 'checked_in'].includes(booking.status)) {
+      const dateRange = buildDateRange(new Date(booking.checkIn), new Date(booking.checkOut));
+      await this.inventoryService.restoreInventory(booking.roomTypeId, dateRange);
+    }
+
     const updatedBooking = await this.prisma.booking.update({
       where: { id: bookingId },
       data: { status },
     });
+
+    // ✅ BUG #11 FIX: Resolve roomNumber from DB instead of passing UUID
+    let roomNumber: string | null = null;
+    const finalRoomId = roomId || booking.roomId;
+    if (finalRoomId) {
+      const room = await this.prisma.room.findUnique({ where: { id: finalRoomId }, select: { roomNumber: true } });
+      roomNumber = room?.roomNumber ?? null;
+    }
 
     // Emit Real-time Notification for Status Update
     this.eventsGateway.broadcastToHotel(booking.hotelId, 'bookingUpdated', { 
         bookingId: updatedBooking.id, 
         status: updatedBooking.status,
         guestName: updatedBooking.leadName,
-        roomNumber: roomId || booking.roomId 
+        roomNumber,
     });
 
     return updatedBooking;
@@ -821,7 +872,7 @@ export class BookingsService {
     });
 
     const totalRooms = await this.prisma.room.count({
-        where: { roomType: { hotelId } }
+        where: { roomType: { hotelId }, deletedAt: null } // ✅ Exclude soft-deleted rooms
     });
     const activeBookings = await this.prisma.booking.count({
         where: {
@@ -832,7 +883,8 @@ export class BookingsService {
         }
     });
     
-    const safeTotalRooms = totalRooms > 0 ? totalRooms : 10; 
+    // ✅ BUG #13 FIX: Don't use hardcoded fallback of 10 — use 0 when no rooms configured
+    const safeTotalRooms = totalRooms > 0 ? totalRooms : 0;
     const occupancyRate = Math.round((activeBookings / safeTotalRooms) * 100);
 
     const chartMap = new Map();
@@ -897,10 +949,12 @@ export class BookingsService {
           });
       }
 
-      const total = lineItems.reduce((acc, item) => acc + (item.amount * item.quantity), 0);
-      const taxRate = 0.07; // 7% VAT assumption
-      const taxAmount = total * taxRate;
-      const subtotal = total - taxAmount;
+      // ✅ BUG #3 FIX: VAT should be calculated ON TOP of the subtotal, not extracted from it.
+      // totalAmount stored in DB is exclusive of VAT (pre-tax price).
+      const subtotal = lineItems.reduce((acc, item) => acc + (item.amount * item.quantity), 0);
+      const taxRate = 0.07; // 7% VAT
+      const taxAmount = Math.round(subtotal * taxRate);
+      const total = subtotal + taxAmount;
 
       return {
           invoiceId: `INV-${booking.id.toUpperCase().slice(-6)}`,
@@ -908,7 +962,7 @@ export class BookingsService {
           hotel: {
               name: booking.hotel.name,
               address: booking.hotel.address,
-              taxId: 'TX-123456789', // Mock
+              taxId: (booking.hotel as any).taxId || null, // ✅ BUG #12 FIX: Use hotel's actual taxId from DB
               email: booking.hotel.contactEmail,
               phone: booking.hotel.contactPhone
           },

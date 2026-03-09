@@ -1,5 +1,5 @@
-
 import { PrismaClient } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -28,8 +28,13 @@ async function main() {
   console.log('✅ Deleted overrides & rate plans');
 
   // 4. Physical Rooms
+  await prisma.roomStatusLog.deleteMany({});
   await prisma.room.deleteMany({});
-  console.log('✅ Deleted all Physical Rooms');
+  console.log('✅ Deleted all Physical Rooms & Logs');
+
+  // Also clear new tables
+  await prisma.dailyStat.deleteMany({});
+  await prisma.message.deleteMany({});
 
   // 5. Room Types
   await prisma.roomType.deleteMany({});
@@ -42,36 +47,47 @@ async function main() {
   await prisma.hotel.deleteMany({});
   console.log('✅ Deleted all Hotels');
 
+  console.log('checking for hotel owner...');
+  let hotelOwner = await prisma.user.findUnique({ where: { email: 'owner@mockhotel.com' } });
+  
+  if (!hotelOwner) {
+      console.log('creating hotel owner user...');
+      const passwordHash = await bcrypt.hash('password123', 10);
+      hotelOwner = await prisma.user.create({
+          data: {
+              email: 'owner@mockhotel.com',
+              name: 'Mock Hotel Owner',
+              passwordHash,
+              roles: ['user', 'hotel_admin'] // Keeping old role array for backwards compatibility
+          }
+      });
+  }
+
+  let ownerId = hotelOwner.id;
+
   console.log('creating hotel...');
   const hotel = await prisma.hotel.create({
       data: {
           name: 'BookingKub Hotel',
           address: '123 Bangkok',
           description: 'Luxury hotel in the heart of Bangkok',
-          amenities: ['Pool', 'Gym', 'Wifi']
+          amenities: ['Pool', 'Gym', 'Wifi'],
+          ownerId: ownerId
       }
   });
   
   const hotelId = hotel.id;
 
-  // 6.1 Assign First User as Admin (so they can access it)
-  const firstUser = await prisma.user.findFirst();
-  if (firstUser) {
+  // 6.1 Assign User as Admin/Owner (so they can access it)
+  if (hotelOwner) {
       await prisma.roleAssignment.create({
           data: {
-              userId: firstUser.id,
+              userId: hotelOwner.id,
               hotelId: hotel.id,
-              role: 'hotel_admin'
+              role: 'owner' // Specific RBAC owner role
           }
       });
-      // Ensure role in user object too
-       if (!firstUser.roles.includes('hotel_admin')) {
-        await prisma.user.update({
-          where: { id: firstUser.id },
-          data: { roles: { push: 'hotel_admin' } }
-        });
-      }
-      console.log(`✅ Assigned User ${firstUser.email} to ${hotel.name}`);
+      console.log(`✅ Assigned User ${hotelOwner.email} as owner to ${hotel.name}`);
   }
 
   console.log('🌱 Seeding fresh data...');

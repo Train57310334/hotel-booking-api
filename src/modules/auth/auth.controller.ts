@@ -39,7 +39,8 @@ export class AuthController {
       
       // If impersonating, the JWT contains a forced hotelId. Override DB roleAssignments globally
       if (req.user.hotelId) {
-          (profile as any).roleAssignments = [{ hotelId: req.user.hotelId, role: 'hotel_admin' }];
+          (profile as any).roleAssignments = [{ hotelId: req.user.hotelId, role: 'owner' }];
+          (profile as any).isImpersonating = true;
       }
     }
     return profile;
@@ -49,7 +50,19 @@ export class AuthController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('platform_admin')
   @Post('impersonate')
-  async impersonate(@Body() body: { targetHotelId: string }) {
-    return this.authService.impersonate(body.targetHotelId);
+  async impersonate(@Body() body: { targetHotelId: string }, @Req() req: any) {
+    return this.authService.impersonate(req.user.userId, body.targetHotelId);
+  }
+
+  /** 📨 ขอรีเซ็ตรหัสผ่าน */
+  @Post('forgot-password')
+  async forgotPassword(@Body() body: { email: string }) {
+    return this.authService.forgotPassword(body.email);
+  }
+
+  /** 🔐 รีเซ็ตรหัสผ่านใหม่ */
+  @Post('reset-password')
+  async resetPassword(@Body() body: { token: string; newPassword: string }) {
+    return this.authService.resetPassword(body.token, body.newPassword);
   }
 }

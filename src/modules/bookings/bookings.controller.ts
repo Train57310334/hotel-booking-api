@@ -91,14 +91,15 @@ export class BookingsController {
         const authHeader = req.headers.authorization;
         if (authHeader && authHeader.startsWith('Bearer ')) {
             const token = authHeader.split(' ')[1];
-            // Decode without verification (Guard handles auth, we just want to extract identity for guest fallback)
-            const payload = this.jwtService.decode(token) as any;
+            // ✅ BUG #9 FIX: use verify() not decode() so the signature is validated
+            const payload = this.jwtService.verify(token) as any;
             if (payload) {
-                userId = payload.userId || payload.sub; // Adjust based on your JWT structure
+                userId = payload.userId || payload.sub;
             }
         }
     } catch (e) {
-        console.warn('Failed to parse token in create:', e);
+        // Token invalid or expired — treat as guest booking
+        console.warn('Failed to parse/verify token in create:', e.message);
     }
 
     try {
@@ -143,13 +144,14 @@ export class BookingsController {
         const authHeader = req.headers.authorization;
         if (authHeader && authHeader.startsWith('Bearer ')) {
             const token = authHeader.split(' ')[1];
-            const payload = this.jwtService.decode(token) as any;
+            // ✅ BUG #9 FIX: verify() not decode()
+            const payload = this.jwtService.verify(token) as any;
             if (payload) {
                 userId = payload.userId || payload.sub;
             }
         }
     } catch (e) {
-        console.warn('Failed to parse token in createPublic:', e);
+        console.warn('Failed to parse/verify token in createPublic:', e.message);
     }
 
     try {
@@ -208,11 +210,10 @@ export class BookingsController {
              throw new ForbiddenException('This booking belongs to a registered user. Please login.');
         }
 
-        // Decode token to verify owner
-        // NOTE: In a real app we would use a PassiveAuthGuard, but here we duplicate the simple decode for speed/fix
+        // ✅ BUG #9 FIX: use verify() to validate signature, not decode() which accepts any token
         try {
             const token = authHeader.split(' ')[1];
-            const payload = this.jwtService.decode(token) as any;
+            const payload = this.jwtService.verify(token) as any;
             if (!payload) {
                  throw new ForbiddenException('Invalid token');
             }
@@ -222,7 +223,8 @@ export class BookingsController {
                 throw new ForbiddenException('Unauthorized access to this booking');
             }
         } catch (e) {
-            throw new ForbiddenException('Invalid token');
+            if (e instanceof ForbiddenException) throw e;
+            throw new ForbiddenException('Invalid or expired token');
         }
     }
 

@@ -13,8 +13,12 @@
     "prisma:deploy": "prisma migrate deploy",
     "seed": "ts-node prisma/seed.ts",
     "seed:demo": "ts-node prisma/seed-demo.ts",
+    "seed:all": "ts-node scripts/reset-and-seed.ts && ts-node -r tsconfig-paths/register scripts/seed-bookings-realistic.ts && ts-node -r tsconfig-paths/register scripts/seed-dashboard-stats.ts",
     "start:dev": "nest start --watch",
-    "start:prod": "node dist/src/main"
+    "start:prod": "node dist/src/main",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",
@@ -62,6 +66,7 @@
     "@nestjs/testing": "^10.0.0",
     "@types/bcryptjs": "^3.0.0",
     "@types/express": "^4.17.21",
+    "@types/jest": "^29.5.14",
     "@types/node": "^20.11.30",
     "@types/passport-jwt": "^3.0.13",
     "@types/passport-local": "^1.0.38",
@@ -70,7 +75,9 @@
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.29.1",
+    "jest": "^29.7.0",
     "prisma": "^5.19.0",
+    "ts-jest": "^29.4.6",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.4.5"

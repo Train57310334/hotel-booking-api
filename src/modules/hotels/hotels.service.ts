@@ -192,8 +192,8 @@ export class HotelsService {
                 } else {
                     // Fallback to RoomType base price
                     planTotal += (rt.basePrice || 0);
-                    // Mock Breakfast logic for demo consistency
-                    if (rp.includesBreakfast) planTotal += 300; 
+                    // ✅ BUG FIX: Use configured breakfast price from ratePlan, not hardcoded 300
+                    if (rp.includesBreakfast) planTotal += (rp.breakfastPrice || 300);
                 }
             }
             return {
@@ -214,15 +214,20 @@ export class HotelsService {
         };
       });
 
-      return {
+      const returnHotel = {
           ...hotel,
           roomTypes: processedRoomTypes,
           nights
       };
+      
+      delete (returnHotel as any).stripeSecretKey;
+      delete (returnHotel as any).omiseSecretKey;
+
+      return returnHotel;
   }
 
-  find(id: string) {
-    return this.prisma.hotel.findUnique({
+  async find(id: string) {
+    const hotel = await this.prisma.hotel.findUnique({
       where: { id },
       include: {
         roomTypes: {
@@ -231,6 +236,11 @@ export class HotelsService {
         reviews: true
       }
     });
+    if (hotel) {
+       delete (hotel as any).stripeSecretKey;
+       delete (hotel as any).omiseSecretKey;
+    }
+    return hotel;
   }
 
   update(id: string, data: any) {
@@ -238,6 +248,20 @@ export class HotelsService {
       where: { id },
       data
     });
+  }
+
+  async getPaymentConfig(id: string) {
+    const hotel = await this.prisma.hotel.findUnique({
+      where: { id },
+      select: {
+          stripePublicKey: true,
+          stripeSecretKey: true,
+          omisePublicKey: true,
+          omiseSecretKey: true
+      }
+    });
+
+    return hotel || {};
   }
 
   async listForSuperAdmin() {
@@ -310,33 +334,44 @@ export class HotelsService {
         }
     });
 
-    // 3. Mock Chart Data for MRR Growth
-    const revenueChart = [
-        { name: 'Jan', value: estimatedMRR * 0.3 },
-        { name: 'Feb', value: estimatedMRR * 0.5 },
-        { name: 'Mar', value: estimatedMRR * 0.7 },
-        { name: 'Apr', value: estimatedMRR * 0.8 },
-        { name: 'May', value: estimatedMRR * 0.9 },
-        { name: 'Jun', value: estimatedMRR },
-    ];
+    // 3. ✅ BUG FIX: Use real DailyStats for MRR/Occupancy chart instead of hardcoded mock data
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-    // 4. Mock Signups 
-    const signupsChart = [
-        { name: 'Jan', value: Math.floor(totalHotels * 0.2) },
-        { name: 'Feb', value: Math.floor(totalHotels * 0.3) },
-        { name: 'Mar', value: Math.floor(totalHotels * 0.4) },
-        { name: 'Apr', value: Math.floor(totalHotels * 0.1) },
-        { name: 'May', value: Math.floor(totalHotels * 0.5) },
-        { name: 'Jun', value: Math.floor(totalHotels * 0.8) },
-    ];
+    const dailyStats = await this.prisma.dailyStat.findMany({
+        where: { date: { gte: sixMonthsAgo } },
+        orderBy: { date: 'asc' },
+        select: { date: true, totalRevenue: true }
+    });
+
+    // Group by month for chart
+    const monthGrouped: Record<string, number> = {};
+    dailyStats.forEach(s => {
+        const key = s.date.toLocaleString('en-US', { month: 'short' });
+        monthGrouped[key] = (monthGrouped[key] || 0) + (s.totalRevenue || 0);
+    });
+
+    const revenueChart = Object.entries(monthGrouped).map(([name, value]) => ({ name, value: Math.round(value) }));
+
+    // 4. ✅ BUG FIX: Use real hotel registration dates for signups chart instead of mock
+    const hotelsWithDate = await this.prisma.hotel.findMany({
+        where: { createdAt: { gte: sixMonthsAgo } },
+        select: { createdAt: true }
+    });
+    const signupGrouped: Record<string, number> = {};
+    hotelsWithDate.forEach(h => {
+        const key = h.createdAt.toLocaleString('en-US', { month: 'short' });
+        signupGrouped[key] = (signupGrouped[key] || 0) + 1;
+    });
+    const signupsChart = Object.entries(signupGrouped).map(([name, value]) => ({ name, value }));
 
     return {
         totalHotels,
         totalRooms,
         estimatedMRR,
         planCounts,
-        revenueChart,
-        signupsChart
+        revenueChart: revenueChart.length ? revenueChart : [{ name: 'No Data', value: 0 }],
+        signupsChart: signupsChart.length ? signupsChart : [{ name: 'No Data', value: 0 }]
     }
   }
 
