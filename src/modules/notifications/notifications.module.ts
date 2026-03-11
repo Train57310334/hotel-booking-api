@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { NotificationsService } from './notifications.service';
 import { NotificationsController } from './notifications.controller';
@@ -9,7 +9,7 @@ import { SettingsModule } from '../settings/settings.module';
   imports: [
       ConfigModule.forRoot({ isGlobal: true }),
       PrismaModule,
-      SettingsModule
+      forwardRef(() => SettingsModule)
   ],
   controllers: [NotificationsController],
   providers: [NotificationsService],

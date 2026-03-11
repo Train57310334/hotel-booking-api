@@ -93,6 +93,23 @@ export class NotificationsService {
     await this.sendEmail(user.email, subject, html);
   }
 
+  // 📮 7. Test Email (Super Admin SMTP verification)
+  async sendTestEmail(to: string) {
+    const siteName = await this.settingsService.get('siteName', 'APP_NAME') || 'BookingKub';
+    const html = `
+      <div style="background-color:#f1f5f9;padding:40px 20px;font-family:sans-serif;">
+        <div style="max-width:600px;margin:0 auto;background:white;border-radius:12px;padding:40px;text-align:center;">
+          <h1 style="color:#0f172a;">✅ SMTP Test Successful</h1>
+          <p style="color:#334155;">This is a test email from <strong>${siteName}</strong>.</p>
+          <p style="color:#334155;">Your platform SMTP configuration is working correctly.</p>
+          <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
+          <small style="color:#94a3b8;">Sent by ${siteName} Super Admin</small>
+        </div>
+      </div>
+    `;
+    await this.sendEmail(to, `[${siteName}] SMTP Test Email`, html);
+  }
+
   // --------------------------------------------------------------------
   // 🔧 UTILITIES
   // --------------------------------------------------------------------
@@ -126,8 +143,11 @@ export class NotificationsService {
       const transporter = await this.getTransporter();
       if (!transporter) return;
 
-      const fromName = await this.settingsService.get('siteName', 'APP_NAME') || 'Hotel Booking';
-      const fromEmail = await this.settingsService.get('smtpUser', 'SMTP_USER') || 'no-reply@hotel.com';
+      const siteName = await this.settingsService.get('siteName', 'APP_NAME') || 'Hotel Booking';
+      const fromName = await this.settingsService.get('smtpFromName', 'SMTP_FROM_NAME') || siteName;
+      const fromEmail = await this.settingsService.get('smtpFromEmail', 'SMTP_FROM_EMAIL')
+        || await this.settingsService.get('smtpUser', 'SMTP_USER')
+        || 'no-reply@hotel.com';
 
       const info = await transporter.sendMail({
         from: `"${fromName}" <${fromEmail}>`,

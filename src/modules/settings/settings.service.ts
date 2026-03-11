@@ -35,6 +35,8 @@ export class SettingsService {
         smtpPort: dbSettings['smtpPort'] || process.env.SMTP_PORT || '',
         smtpUser: dbSettings['smtpUser'] || process.env.SMTP_USER || '',
         smtpPass: dbSettings['smtpPass'] || process.env.SMTP_PASS || '',
+        smtpFromName: dbSettings['smtpFromName'] || process.env.SMTP_FROM_NAME || '',
+        smtpFromEmail: dbSettings['smtpFromEmail'] || process.env.SMTP_FROM_EMAIL || '',
 
         // SEO & Marketing (Platform-wide)
         seoGoogleVerification: dbSettings['seoGoogleVerification'] || '',
@@ -96,6 +98,8 @@ export class SettingsService {
       'smtpPort': 'notification',
       'smtpUser': 'notification',
       'smtpPass': 'notification',
+      'smtpFromName': 'notification',
+      'smtpFromEmail': 'notification',
       'landingHeroTitle': 'general',
       'landingHeroDescription': 'general',
       'landingCTA': 'general',

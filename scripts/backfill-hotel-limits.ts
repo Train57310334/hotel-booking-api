@@ -4,18 +4,24 @@ const prisma = new PrismaClient();
 
 const PACKAGE_LIMITS: Record<string, any> = {
   LITE: {
-    maxRooms: 5,
-    maxRoomTypes: 2,
+    maxRooms: 2,
+    maxRoomTypes: 1,
     maxStaff: 1,
     hasPromotions: false,
     hasOnlinePayment: false,
+    hasSeo: false,
+    hasCustomDomain: false,
+    hasAdvancedAnalytics: false,
   },
   PRO: {
-    maxRooms: 50,
-    maxRoomTypes: 10,
+    maxRooms: 30,
+    maxRoomTypes: 5,
     maxStaff: 5,
     hasPromotions: true,
     hasOnlinePayment: true,
+    hasSeo: false,
+    hasCustomDomain: false,
+    hasAdvancedAnalytics: false,
   },
   ENTERPRISE: {
     maxRooms: 9999, // Unlimited
@@ -23,6 +29,9 @@ const PACKAGE_LIMITS: Record<string, any> = {
     maxStaff: 9999,
     hasPromotions: true,
     hasOnlinePayment: true,
+    hasSeo: true,
+    hasCustomDomain: true,
+    hasAdvancedAnalytics: true,
   }
 };
 

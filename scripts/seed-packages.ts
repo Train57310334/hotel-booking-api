@@ -2,98 +2,108 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-const plans = [
+const packages = [
     {
-        id: 'LITE',
         name: 'LITE',
         price: 0,
         priceLabel: 'Free',
         period: 'Forever',
-        description: 'Perfect for small guesthouses and startups.',
-        icon: 'Building2', // Note: Wait, available icons might not have Building2. I'll use Package.
-        color: 'slate',
+        description: 'Perfect for small guesthouses or testing the platform.',
         features: [
-            '1 Property',
-            'Up to 10 Rooms',
-            'Direct Booking Page',
-            'Basic Calendar',
-            'Manual Payments',
-            'Email Support'
+            'Up to 2 Rooms',
+            '1 Room Type',
+            '1 Staff Account',
+            'Basic Dashboard',
+            'Manual Bookings'
         ],
         missingFeatures: [
-            'No Promotion Codes',
-            'No Online Payment Gateway',
-            'No Channel Manager (OTA)'
+            'Online Payments (Stripe/Omise)',
+            'Promotions & Discounts',
+            'Advanced Analytics / SEO',
         ],
         isPopular: false,
-        maxRooms: 10,
-        maxRoomTypes: 2,
+        color: 'slate',
+        icon: 'Home',
+        maxRooms: 2,
+        maxRoomTypes: 1,
         maxStaff: 1,
         hasPromotions: false,
-        hasOnlinePayment: false
+        hasOnlinePayment: false,
+        hasSeo: false,
+        hasCustomDomain: false,
+        hasAdvancedAnalytics: false,
     },
     {
-        id: 'PRO',
         name: 'PRO',
         price: 1500,
         priceLabel: '฿1,500',
         period: '/month',
-        description: 'Everything you need for a growing hotel business.',
-        icon: 'Zap',
-        color: 'emerald',
+        description: 'Everything you need to run a professional hotel.',
         features: [
-            'Up to 50 Rooms',
-            'Channel Manager Sync',
-            'Automated Payments (Stripe/Omise)',
-            'Advanced Analytics & Reports',
-            'Multiple Staff Accounts',
-            'Priority Support 24/7'
+            'Up to 30 Rooms',
+            'Up to 5 Room Types',
+            'Up to 5 Staff Accounts',
+            'Online Payments (Stripe/Omise)',
+            'Promotions & Discount Codes',
+            'Basic Analytics (GA4/Pixel)'
         ],
-        missingFeatures: [],
+        missingFeatures: [
+            'Custom Domain',
+            'Advanced SEO Control',
+            'Looker Studio Embedded'
+        ],
         isPopular: true,
-        maxRooms: 50,
-        maxRoomTypes: 10,
+        color: 'emerald',
+        icon: 'Zap',
+        maxRooms: 30,
+        maxRoomTypes: 5,
         maxStaff: 5,
         hasPromotions: true,
-        hasOnlinePayment: true
+        hasOnlinePayment: true,
+        hasSeo: false,
+        hasCustomDomain: false,
+        hasAdvancedAnalytics: false,
     },
     {
-        id: 'ENTERPRISE',
         name: 'ENTERPRISE',
         price: 5000,
-        priceLabel: '฿5,000',
+        priceLabel: 'Custom',
         period: '/month',
-        description: 'For chains and large scale operations.',
-        icon: 'Crown',
-        color: 'indigo',
+        description: 'For large hotels and resorts needing unlimited scale.',
         features: [
             'Unlimited Rooms',
-            'Multi-Property Management',
-            'API Access',
-            'Custom Branding (White Label)',
-            'Dedicated Account Manager',
-            'On-site Training',
-            'SLA Guarantee'
+            'Unlimited Room Types',
+            'Unlimited Staff Accounts',
+            'All PRO Features',
+            'Advanced SEO Control',
+            'Custom Domain Integration',
+            'Looker Studio Dashboard',
+            'Priority 24/7 Support'
         ],
         missingFeatures: [],
         isPopular: false,
+        color: 'indigo',
+        icon: 'Building',
         maxRooms: 9999,
         maxRoomTypes: 9999,
         maxStaff: 9999,
         hasPromotions: true,
-        hasOnlinePayment: true
+        hasOnlinePayment: true,
+        hasSeo: true,
+        hasCustomDomain: true,
+        hasAdvancedAnalytics: true,
     }
 ];
 
 async function main() {
     console.log('Seeding subscription packages...');
-    for (const plan of plans) {
+    for (const pkg of packages) {
         await prisma.subscriptionPlan.upsert({
-            where: { id: plan.id },
-            update: plan,
-            create: plan,
+            where: { name: pkg.name },
+            update: pkg,
+            create: pkg,
         });
-        console.log(`Upserted plan: ${plan.id}`);
+        console.log(`Upserted plan: ${pkg.name}`);
     }
     console.log('Done!');
 }

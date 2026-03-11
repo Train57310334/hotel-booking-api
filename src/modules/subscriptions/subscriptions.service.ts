@@ -36,6 +36,9 @@ export class SubscriptionsService {
             maxStaff: plan.maxStaff,
             hasPromotions: plan.hasPromotions,
             hasOnlinePayment: plan.hasOnlinePayment,
+            hasSeo: plan.hasSeo,
+            hasCustomDomain: plan.hasCustomDomain,
+            hasAdvancedAnalytics: plan.hasAdvancedAnalytics,
         };
 
         // Perform the upgrade & log payment in transaction
