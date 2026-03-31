@@ -74,7 +74,19 @@ export class NotificationsService {
     // await this.createNotification('Feedback', `Sent feedback request to ${booking.leadName}`, 'info');
   }
 
-  // 🔑 6. ลืมรหัสผ่าน
+  // 📲 6. ยืนยัน Web Check-in สำเร็จ
+  async sendWebCheckinConfirmationEmail(booking: any) {
+    const subject = `✅ Digital Registration Complete - ${booking.hotel?.name || 'Your Hotel'}`;
+    const html = this.templateWebCheckinConfirmation(booking);
+    await this.sendEmail(booking.leadEmail, subject, html);
+    await this.createNotification(
+      'Web Check-in Submitted',
+      `${booking.leadName} completed digital registration for ${booking.hotel?.name}`,
+      'success'
+    );
+  }
+
+
   async sendPasswordResetEmail(user: any, token: string) {
     const subject = `Password Reset Request - ${await this.settingsService.get('siteName', 'BookingKub')}`;
     const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/reset-password?token=${token}`;
@@ -368,6 +380,78 @@ export class NotificationsService {
             <div style="margin-top: 40px; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 20px;">
                 <p style="color: #94a3b8; font-size: 12px; margin: 0;">Thank you for choosing ${booking.hotel.name}.</p>
                 <p style="color: #94a3b8; font-size: 12px; margin: 5px 0 0 0;">Powered by BookingKub</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private templateWebCheckinConfirmation(booking: any): string {
+    const checkInDate = this.formatDate(booking.checkIn);
+    const checkOutDate = this.formatDate(booking.checkOut);
+    const eta = booking.estimatedArrivalTime ? `<p style="margin:4px 0 0 0;font-size:13px;color:#10b981;">🕐 ETA: ${booking.estimatedArrivalTime}</p>` : '';
+
+    return `
+      <div style="background-color: #f1f5f9; padding: 40px 20px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
+        <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.08);">
+          
+          <!-- Header Banner -->
+          <div style="background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%); padding: 40px 40px 30px 40px; text-align: center;">
+            <div style="width: 64px; height: 64px; background: rgba(16,185,129,0.15); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 16px; border: 2px solid rgba(16,185,129,0.3);">
+              <span style="font-size: 28px;">✅</span>
+            </div>
+            <h1 style="color: white; margin: 0 0 8px 0; font-size: 24px; font-weight: 800;">Registration Complete!</h1>
+            <p style="color: rgba(255,255,255,0.7); margin: 0; font-size: 15px;">Your digital check-in has been submitted successfully.</p>
+          </div>
+          
+          <div style="padding: 40px;">
+            <p style="color: #334155; font-size: 16px; margin-top: 0;">Hello <strong>${booking.leadName}</strong>,</p>
+            <p style="color: #64748b; line-height: 1.7;">Thank you for completing your digital registration for <strong>${booking.hotel?.name || 'your upcoming stay'}</strong>. Your information has been securely received and our team has been notified.</p>
+
+            <!-- Booking Card -->
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; margin: 28px 0;">
+              <p style="color: #94a3b8; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 16px 0;">Booking Summary</p>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-size: 14px; width: 40%;">Booking ID</td>
+                  <td style="padding: 8px 0; text-align: right; font-weight: 700; color: #0f172a; font-family: monospace;">#${booking.id?.slice(-8).toUpperCase()}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Check-in</td>
+                  <td style="padding: 8px 0; text-align: right; font-weight: 700; color: #10b981;">${checkInDate}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Check-out</td>
+                  <td style="padding: 8px 0; text-align: right; font-weight: 700; color: #ef4444;">${checkOutDate}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Room Type</td>
+                  <td style="padding: 8px 0; text-align: right; font-weight: 700; color: #0f172a;">${booking.roomType?.name || 'Standard Room'}</td>
+                </tr>
+              </table>
+              ${eta}
+            </div>
+
+            <!-- What to Bring Checklist -->
+            <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 20px; margin: 0 0 28px 0;">
+              <p style="color: #92400e; font-size: 13px; font-weight: 700; margin: 0 0 12px 0;">📋 What to Bring on Arrival</p>
+              <ul style="margin: 0; padding: 0; list-style: none; color: #78350f; font-size: 14px; line-height: 2;">
+                <li>✓ &nbsp;This email (QR code or booking ID)</li>
+                <li>✓ &nbsp;A valid physical ID or Passport</li>
+                <li>✓ &nbsp;Credit/Debit card for incidentals</li>
+              </ul>
+            </div>
+
+            <!-- CTA -->
+            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 28px;">
+              <p style="color: #15803d; font-weight: 700; margin: 0 0 4px 0; font-size: 16px;">🚀 Fast-Track Check-in Ready!</p>
+              <p style="color: #166534; font-size: 13px; margin: 0;">Simply proceed to the Fast-Track counter on arrival. Your key will be prepared.</p>
+            </div>
+
+            <div style="margin-top: 30px; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 20px;">
+              <p style="color: #94a3b8; font-size: 12px; margin: 0;">Questions? Contact ${booking.hotel?.name || 'the hotel'} directly.</p>
+              <p style="color: #94a3b8; font-size: 12px; margin: 5px 0 0 0;">Powered by <strong>BookingKub</strong></p>
             </div>
           </div>
         </div>

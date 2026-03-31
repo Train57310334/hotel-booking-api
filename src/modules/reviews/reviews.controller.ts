@@ -8,13 +8,30 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 export class ReviewsController {
   constructor(private svc: ReviewsService) {}
 
-  // Public: List approved reviews for a hotel
+  // ─── Public: Guest Token-Based Review ──────────────────────────────────────
+
+  // Validate token & return booking info (no auth needed)
+  @Get('request/:token')
+  validateToken(@Param('token') token: string) {
+    return this.svc.validateToken(token);
+  }
+
+  // Submit review via token (no auth needed)
+  @Post('request/:token')
+  submitGuestReview(
+    @Param('token') token: string,
+    @Body() body: { rating: number; comment?: string },
+  ) {
+    return this.svc.submitGuestReview(token, body.rating, body.comment || '');
+  }
+
+  // ─── Public: List approved reviews for a hotel ──────────────────────────────
   @Get('hotel/:hotelId')
   listPublic(@Param('hotelId') hotelId: string) {
     return this.svc.findByHotel(hotelId);
   }
 
-  // User: Create Review
+  // ─── Authenticated: Create Review ──────────────────────────────────────────
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Post()
@@ -25,7 +42,7 @@ export class ReviewsController {
     });
   }
 
-  // Admin: List All (Filtered by Hotel)
+  // ─── Admin: List All ───────────────────────────────────────────────────────
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Get('admin/all')
@@ -33,7 +50,6 @@ export class ReviewsController {
     return this.svc.findAll(status, hotelId);
   }
 
-  // Admin: Stats (Filtered by Hotel)
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Get('admin/stats')
@@ -41,7 +57,6 @@ export class ReviewsController {
     return this.svc.getStats(hotelId);
   }
 
-  // Admin: Moderate
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Put('admin/:id/status')
@@ -56,3 +71,4 @@ export class ReviewsController {
     return this.svc.delete(id);
   }
 }
+

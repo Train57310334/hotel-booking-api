@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards, Req, Res } from '@nestjs/common';
+import { Controller, Get, Post, Query, UseGuards, Req, Res, Param } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Response } from 'express';
 import { ReportsService } from './reports.service';
@@ -17,8 +17,6 @@ export class ReportsController {
   private async getHotelId(req: any, queryHotelId?: string) {
       if (queryHotelId) return queryHotelId;
       if (req.user.hotelId) return req.user.hotelId;
-      
-      // Fallback for platform admins
       const defaultId = await this.svc.getDefaultHotelId();
       if (!defaultId) throw new Error('No hotel configured in system');
       return defaultId;
@@ -51,7 +49,7 @@ export class ReportsController {
   @Get('summary')
   async summary(@Req() req: any, @Query('from') from: string, @Query('to') to: string, @Query('hotelId') hotelId?: string) {
     const hId = await this.getHotelId(req, hotelId);
-    return this.svc.getSummary(hotelId, new Date(from), new Date(to));
+    return this.svc.getSummary(hId, new Date(from), new Date(to));
   }
 
   @Get('daily-stats')
@@ -63,7 +61,6 @@ export class ReportsController {
   async exportCsv(@Req() req: any, @Res() res: Response, @Query('from') from: string, @Query('to') to: string, @Query('hotelId') hotelId?: string) {
       const hId = await this.getHotelId(req, hotelId);
       const csv = await this.svc.exportToCsv(hId, new Date(from), new Date(to));
-      
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename=financial_report.csv');
       res.send(csv);
@@ -73,9 +70,22 @@ export class ReportsController {
   async exportExcel(@Req() req: any, @Res() res: Response, @Query('from') from: string, @Query('to') to: string, @Query('hotelId') hotelId?: string) {
       const hId = await this.getHotelId(req, hotelId);
       const buffer = await this.svc.exportToExcel(hId, new Date(from), new Date(to));
-      
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', 'attachment; filename=financial_report.xlsx');
       res.send(buffer);
+  }
+
+  // ─── Night Audit ─────────────────────────────────────────────────────────────
+
+  @Post(':hotelId/night-audit')
+  async runNightAudit(@Param('hotelId') hotelId: string, @Req() req: any) {
+    const hId = hotelId || (await this.getHotelId(req));
+    return this.svc.runNightAudit(hId);
+  }
+
+  @Get(':hotelId/night-audit/latest')
+  async getLatestAudit(@Param('hotelId') hotelId: string, @Req() req: any) {
+    const hId = hotelId || (await this.getHotelId(req));
+    return this.svc.getLatestAudit(hId);
   }
 }

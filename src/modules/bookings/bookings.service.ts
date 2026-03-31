@@ -4,6 +4,8 @@ import { PrismaService } from '@/common/prisma/prisma.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { InventoryService } from '@/modules/inventory/inventory.service';
 import { EventsGateway } from '@/modules/events/events.gateway';
+import { ReviewsService } from '@/modules/reviews/reviews.service';
+import { ActivityLogsService } from '@/modules/activity-logs/activity-logs.service';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
@@ -25,6 +27,8 @@ export class BookingsService {
     private notificationsService: NotificationsService,
     private inventoryService: InventoryService,
     private eventsGateway: EventsGateway,
+    private reviewsService: ReviewsService,
+    private activityLogsService: ActivityLogsService,
   ) {}
 
   // ─── BOOKING DRAFT STORE (Database backed, 15-min TTL) ─────────────────────────
@@ -136,12 +140,24 @@ export class BookingsService {
 
       // 4. Transaction: Create Booking + Deduct Inventory
       const booking = await this.prisma.$transaction(async (tx) => {
+        let finalPromoId = null;
+        if (data.promotionCode) {
+            const promo = await tx.promotion.findUnique({ where: { code: data.promotionCode }, include: { hotel: true } });
+            const now = new Date();
+            const isValid = promo && promo.startDate <= now && promo.endDate >= now && promo.isActive && (promo.maxUses === null || promo.usedCount < promo.maxUses) && (!promo.hotel || promo.hotel.hasPromotions);
+            if (isValid) {
+                finalPromoId = promo.id;
+                await tx.promotion.update({ where: { id: promo.id }, data: { usedCount: { increment: 1 } } });
+            }
+        }
+
         const bookingData: Prisma.BookingUncheckedCreateInput = {
           userId: data.userId ?? null,
           hotelId: data.hotelId,
           roomTypeId: data.roomTypeId,
           ratePlanId: data.ratePlanId,
           roomId: data.roomId,
+          promotionId: finalPromoId,
           checkIn: checkInDate,
           checkOut: checkOutDate,
           guestsAdult: data.guests?.adult ?? 2,
@@ -334,6 +350,7 @@ export class BookingsService {
 
         let appliedDiscount = 0;
         let finalPromoLog = null;
+        let finalPromoId = null;
 
         // C0. Validate Promotion Code if provided
         if (data.promotionCode) {
@@ -345,7 +362,9 @@ export class BookingsService {
             if (promo) {
                 const now = new Date();
                 const isValid = now >= promo.startDate && now <= promo.endDate && 
-                                (!promo.hotel || promo.hotel.hasPromotions);
+                                (!promo.hotel || promo.hotel.hasPromotions) &&
+                                promo.isActive &&
+                                (promo.maxUses === null || promo.usedCount < promo.maxUses);
                 
                 if (isValid) {
                     if (promo.type === 'percent') {
@@ -361,6 +380,8 @@ export class BookingsService {
                     
                     backendCalculatedTotal -= appliedDiscount;
                     finalPromoLog = `[PROMO: ${promo.code} - Saved ${appliedDiscount}]`;
+                    finalPromoId = promo.id;
+                    await tx.promotion.update({ where: { id: promo.id }, data: { usedCount: { increment: 1 } } });
                 }
             }
         }
@@ -383,6 +404,7 @@ export class BookingsService {
                hotelId: data.hotelId,
                roomTypeId: primaryRoom.roomTypeId,
                ratePlanId: primaryRoom.ratePlanId,
+               promotionId: finalPromoId,
                checkIn: checkInDate,
                checkOut: checkOutDate,
                guestsAdult: data.adults ?? 2,
@@ -523,10 +545,19 @@ export class BookingsService {
 
     await this.notificationsService.sendCancellationEmail(booking);
 
-    return this.prisma.booking.update({
+    const updatedBooking = await this.prisma.booking.update({
       where: { id: bookingId },
       data: { status: 'cancelled' },
     });
+
+    this.activityLogsService.logAction(
+      booking.hotelId,
+      'BOOKING_CANCELLED',
+      { bookingId },
+      userId
+    );
+
+    return updatedBooking;
   }
 
   /** 👮 Admin: ยกเลิกการจอง (ไม่ต้องเช็ค Owner) */
@@ -593,6 +624,7 @@ export class BookingsService {
         ratePlan: true,
         payment: true,
         guests: true,
+        promotion: true,
       },
     });
 
@@ -609,6 +641,7 @@ export class BookingsService {
         ratePlan: true,
         payment: true,
         guests: true,
+        promotion: true,
       },
     });
 
@@ -663,7 +696,7 @@ export class BookingsService {
          
          const finalRoomId = booking.roomId;
          // Update booking and mark room as dirty
-         return await this.prisma.$transaction(async (tx) => {
+         const result = await this.prisma.$transaction(async (tx) => {
              const updatedBooking = await tx.booking.update({
                  where: { id: bookingId },
                  data: { status }
@@ -680,6 +713,9 @@ export class BookingsService {
              }
              return updatedBooking;
          });
+         // Fire-and-forget review request email (non-blocking)
+         this.reviewsService.sendReviewRequest(bookingId).catch(() => {});
+         return result;
     }
 
     // Default status update (e.g. pending -> confirmed, or cancelled)
@@ -709,6 +745,14 @@ export class BookingsService {
         guestName: updatedBooking.leadName,
         roomNumber,
     });
+
+    // Log Activity
+    this.activityLogsService.logAction(
+        booking.hotelId,
+        'BOOKING_STATUS_UPDATED',
+        { bookingId: updatedBooking.id, oldStatus: booking.status, newStatus: status },
+        userId
+    );
 
     return updatedBooking;
   }
@@ -770,12 +814,72 @@ export class BookingsService {
           roomId: true,
           roomTypeId: true,
           totalAmount: true,
+          isWebCheckedIn: true,
           room: { select: { id: true, roomNumber: true } },
           roomType: { select: { name: true } },
           payment: true
       }
     });
   }
+
+  async rescheduleAdmin(bookingId: string, hotelId: string, roomId: string, checkIn: string, checkOut: string, userId: string) {
+      if (!roomId) throw new BadRequestException('Room ID is required.');
+      const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+      if (!booking || booking.hotelId !== hotelId) throw new NotFoundException('Booking not found');
+
+      const room = await this.prisma.room.findFirst({ where: { id: roomId, roomType: { hotelId } } });
+      if (!room) throw new BadRequestException('Invalid room selection');
+
+      const newCheckIn = new Date(checkIn);
+      const newCheckOut = new Date(checkOut);
+
+      const overlap = await this.prisma.booking.findFirst({
+          where: {
+              roomId,
+              id: { not: bookingId },
+              status: { in: ['confirmed', 'checked_in'] },
+              checkIn: { lt: newCheckOut },
+              checkOut: { gt: newCheckIn }
+          }
+      });
+
+      if (overlap) throw new ConflictException(`Room is already booked during these dates.`);
+
+      return this.prisma.$transaction(async (tx) => {
+          // 1. Restore OLD inventory
+          if (booking.status === 'confirmed' || booking.status === 'checked_in') {
+             const oldDates: Date[] = [];
+             let d = new Date(booking.checkIn);
+             while (d < new Date(booking.checkOut)) { oldDates.push(new Date(d)); d.setDate(d.getDate() + 1); }
+             
+             for (const dt of oldDates) {
+                 const inv = await tx.inventoryCalendar.findUnique({ where: { roomTypeId_date: { roomTypeId: booking.roomTypeId, date: dt } } });
+                 if (inv) await tx.inventoryCalendar.update({ where: { id: inv.id }, data: { allotment: inv.allotment + 1 } });
+             }
+          }
+
+          // 2. Deduct NEW inventory
+          if (booking.status === 'confirmed' || booking.status === 'checked_in') {
+             const newDates: Date[] = [];
+             let d = new Date(newCheckIn);
+             while (d < newCheckOut) { newDates.push(new Date(d)); d.setDate(d.getDate() + 1); }
+
+             for (const dt of newDates) {
+                 const inv = await tx.inventoryCalendar.findUnique({ where: { roomTypeId_date: { roomTypeId: room.roomTypeId, date: dt } } });
+                 if (inv) await tx.inventoryCalendar.update({ where: { id: inv.id }, data: { allotment: Math.max(0, inv.allotment - 1) } });
+             }
+          }
+
+          // 3. Update Booking
+          const updated = await tx.booking.update({
+              where: { id: bookingId },
+              data: { roomId, roomTypeId: room.roomTypeId, checkIn: newCheckIn, checkOut: newCheckOut }
+          });
+
+          return updated;
+      });
+  }
+
   async calculateTotalPrice(
     roomTypeId: string, 
     ratePlanId: string, 
@@ -825,7 +929,7 @@ export class BookingsService {
       if (promoCode) {
         const promo = await this.prisma.promotion.findUnique({ where: { code: promoCode } });
         const now = new Date();
-        if (promo && promo.startDate <= now && promo.endDate >= now) {
+        if (promo && promo.startDate <= now && promo.endDate >= now && promo.isActive && (promo.maxUses === null || promo.usedCount < promo.maxUses)) {
             if (promo.type === 'percent') {
                 const discount = Math.floor(total * (promo.value / 100));
                 total = Math.max(0, total - discount);
@@ -856,12 +960,19 @@ export class BookingsService {
         hotelId,
         createdAt: { gte: startDate },
         status: { not: 'cancelled' }
+      },
+      include: {
+        folioCharges: true
       }
     });
 
     const totalBookings = bookings.length;
     const confirmedBookings = bookings.filter(b => b.status === 'confirmed').length;
-    const totalRevenue = bookings.reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+    const totalRevenue = bookings.reduce((sum, b) => {
+        const roomTotal = b.totalAmount || 0;
+        const folioTotal = b.folioCharges ? b.folioCharges.reduce((acc, c) => acc + c.amount, 0) : 0;
+        return sum + roomTotal + folioTotal;
+    }, 0);
 
     const todayStr = new Date().toISOString().split('T')[0];
     const checkIns = await this.prisma.booking.count({ 
@@ -907,6 +1018,43 @@ export class BookingsService {
         occupancyRate,
         chartData,
         occupancyChart: occupancyChart.reverse()
+    };
+  }
+
+  async getDailyOperationsStats(hotelId: string) {
+    if (!hotelId) throw new BadRequestException('Hotel ID is required');
+    
+    const todayStr = new Date().toISOString().split('T')[0];
+    const startOfToday = new Date(todayStr);
+    const endOfToday = new Date(startOfToday.getTime() + 86400000);
+
+    const [arrivals, departures, inHouse, urgentCleaning] = await Promise.all([
+      this.prisma.booking.findMany({
+        where: { hotelId, checkIn: { gte: startOfToday, lt: endOfToday }, status: 'confirmed' },
+        include: { roomType: true, room: true },
+        orderBy: { createdAt: 'desc' }
+      }),
+      this.prisma.booking.findMany({
+        where: { hotelId, checkOut: { gte: startOfToday, lt: endOfToday }, status: 'checked_in' },
+        include: { roomType: true, room: true },
+        orderBy: { createdAt: 'desc' }
+      }),
+      this.prisma.booking.findMany({
+        where: { hotelId, status: 'checked_in' },
+        include: { roomType: true, room: true },
+        orderBy: { createdAt: 'desc' }
+      }),
+      this.prisma.room.findMany({
+        where: { roomType: { hotelId }, status: 'DIRTY', deletedAt: null },
+        include: { roomType: true }
+      })
+    ]);
+
+    return {
+      arrivals,
+      departures,
+      inHouse,
+      urgentCleaning
     };
   }
 
@@ -1064,6 +1212,7 @@ export class BookingsService {
                 room: true,
                 payment: true,
                 guests: true,
+                promotion: true,
             },
             orderBy,
             skip: (pageNum - 1) * limitNum,

@@ -47,6 +47,7 @@ model User {
   updatedAt   DateTime        @updatedAt
   Hotel       Hotel[]
   roomUpdates RoomStatusLog[]
+  activityLogs ActivityLog[]
 }
 
 //
@@ -151,11 +152,13 @@ model Hotel {
   promotions           Promotion[]
   expenses             Expense[]
   messages             Message[]
+  yieldRules           YieldRule[]
   subscriptionPayments SubscriptionPayment[]
 
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   RoleAssignment RoleAssignment[]
+  activityLogs   ActivityLog[]
 }
 
 model RoomType {
@@ -177,7 +180,8 @@ model RoomType {
   maxAdults   Int                 @default(2)
   maxChildren Int                 @default(0)
   isFeatured  Boolean             @default(false)
-  icalUrl     String? // Used for external calendar sync (e.g. from Agoda/Booking.com)
+  icalUrl           String?   // Used for external calendar sync (e.g. from Agoda/Booking.com)
+  icalLastSyncedAt  DateTime? // Timestamp of last successful iCal sync
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @default(now()) @updatedAt
   deletedAt   DateTime?
@@ -193,14 +197,15 @@ enum RoomStatus {
 }
 
 model Room {
-  id         String          @id @default(cuid())
-  roomTypeId String
-  roomType   RoomType        @relation("RoomTypeRooms", fields: [roomTypeId], references: [id])
-  bookings   Booking[]       @relation("RoomBookings")
-  roomNumber String?
-  status     RoomStatus      @default(CLEAN)
-  statusLogs RoomStatusLog[]
-  deletedAt  DateTime?
+  id                 String               @id @default(cuid())
+  roomTypeId         String
+  roomType           RoomType             @relation("RoomTypeRooms", fields: [roomTypeId], references: [id])
+  bookings           Booking[]            @relation("RoomBookings")
+  roomNumber         String?
+  status             RoomStatus           @default(CLEAN)
+  statusLogs         RoomStatusLog[]
+  maintenanceReports MaintenanceReport[]
+  deletedAt          DateTime?
 }
 
 model RoomStatusLog {
@@ -215,6 +220,22 @@ model RoomStatusLog {
   note String?
 
   createdAt DateTime @default(now())
+
+  @@index([roomId])
+}
+
+model MaintenanceReport {
+  id          String    @id @default(cuid())
+  roomId      String
+  room        Room      @relation(fields: [roomId], references: [id])
+  category    String    // e.g. "Plumbing", "Electrical", "Furniture", "Other"
+  description String
+  priority    String    @default("NORMAL") // LOW, NORMAL, HIGH
+  status      String    @default("OPEN")   // OPEN, IN_PROGRESS, RESOLVED
+  reportedBy  String?   // Free-text housekeeper name
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([roomId])
 }
@@ -289,9 +310,14 @@ model Promotion {
   endDate    DateTime
   conditions String?
 
-  // Optional: apply only to a specific hotel
   hotelId String?
   hotel   Hotel?  @relation(fields: [hotelId], references: [id])
+
+  isActive   Boolean @default(true)
+  maxUses    Int? // Null means unlimited
+  usedCount  Int     @default(0)
+
+  bookings   Booking[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -319,6 +345,16 @@ model Booking {
   specialRequests String?
   source          String?  @default("direct") // 'direct' or 'OTA'
   notes           String? // Internal notes or OTA sync references
+
+  isWebCheckedIn       Boolean @default(false)
+  signatureUrl         String? // Path to digital signature image
+  estimatedArrivalTime String? // e.g. "14:30"
+
+  reviewToken     String?  @unique // One-time token for post-stay review email
+  reviewTokenUsed Boolean  @default(false) // True once guest submits review via token
+
+  promotionId     String?
+  promotion       Promotion? @relation(fields: [promotionId], references: [id])
 
   user     User?    @relation(fields: [userId], references: [id])
   hotel    Hotel    @relation(fields: [hotelId], references: [id])
@@ -406,12 +442,14 @@ model FolioCharge {
 model Review {
   id        String   @id @default(cuid())
   hotelId   String
-  userId    String
+  userId    String?  // Optional: null for guest-submitted (token-based) reviews
   rating    Int
   comment   String?
   status    String   @default("pending") // pending/approved/rejected
+  guestName String?  // For token-based reviews (no account required)
+  source    String   @default("direct") // direct | post-stay-email
   hotel     Hotel    @relation(fields: [hotelId], references: [id])
-  user      User     @relation(fields: [userId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())
 }
 
@@ -420,16 +458,29 @@ model Review {
 //
 
 model Message {
-  id        String   @id @default(cuid())
-  name      String
-  email     String
-  subject   String?
-  content   String
-  status    String   @default("unread") // unread, read, replied
-  createdAt DateTime @default(now())
+  id         String    @id @default(cuid())
+  name       String
+  email      String
+  subject    String?
+  content    String
+  status     String    @default("unread") // unread, read, replied, archived
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
 
   hotelId String?
   hotel   Hotel?  @relation(fields: [hotelId], references: [id])
+
+  replies MessageReply[]
+}
+
+model MessageReply {
+  id        String   @id @default(cuid())
+  messageId String
+  content   String
+  staffName String   @default("Hotel Staff")
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
 }
 
 //
@@ -510,3 +561,52 @@ model BookingDraft {
 
   @@index([expiresAt])
 }
+
+//
+// ─── YIELD MANAGEMENT (PHASE 10) ──────────────────────────────────────────
+//
+
+model YieldRule {
+  id              String   @id @default(cuid())
+  hotelId         String
+  name            String   // e.g. "Weekend High Occupancy"
+  
+  // Triggers
+  triggerType     String   // "OCCUPANCY" or "DAYS_TO_ARRIVAL"
+  conditionOp     String   // "GREATER_THAN" or "LESS_THAN"
+  conditionValue  Int      // e.g., 85 (for 85%)
+
+  // Adjustments
+  adjustmentType  String   // "PERCENTAGE" or "FIXED"
+  adjustmentOp    String   // "INCREASE" or "DECREASE"
+  adjustmentValue Float    // e.g., 15 (for 15%)
+
+  isActive        Boolean  @default(true)
+  hotel           Hotel    @relation(fields: [hotelId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+//
+// ─── AUDIT LOGS & RBAC (PHASE 12) ─────────────────────────────────────────
+//
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  hotelId   String
+  userId    String?  // Nullable if system action or deleted user
+  userName  String?  // Snapshot of user name at the time
+  userEmail String?  // Snapshot of user email at the time
+  action    String   // Key identifier e.g., 'BOOKING_CREATED', 'RATE_UPDATED'
+  details   Json?    // Any meta data describing the change
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  hotel     Hotel    @relation(fields: [hotelId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([hotelId])
+  @@index([userId])
+  @@index([createdAt])
+}
+

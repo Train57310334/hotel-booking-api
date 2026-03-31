@@ -137,12 +137,26 @@ export class RatesService {
       checkIn: Date, 
       checkOut: Date
   ): Promise<number> {
-      // 1. Get Base Price from RoomType
-      const roomType = await this.prisma.roomType.findUnique({ where: { id: roomTypeId } });
+      // 1. Get Base Price and context
+      const roomType = await this.prisma.roomType.findUnique({ 
+          where: { id: roomTypeId }
+      });
       if (!roomType) throw new NotFoundException('Room Type not found');
+
+      // 2. Fetch Yield Rules for this hotel
+      const yieldRules = await this.prisma.yieldRule.findMany({
+          where: { hotelId: roomType.hotelId, isActive: true }
+      });
+
+      // 3. Fetch Total Physical Rooms to calculate occupancy later
+      const totalRooms = await this.prisma.room.count({
+          where: { roomTypeId, deletedAt: null }
+      });
       
       let total = 0;
       const d = new Date(checkIn);
+      const today = new Date();
+      today.setHours(0,0,0,0);
 
       // Fetch all overrides in range
       const overrides = await this.prisma.rateOverride.findMany({
@@ -155,21 +169,61 @@ export class RatesService {
               }
           }
       });
-
       const overrideMap = new Map<string, number>();
       overrides.forEach(o => overrideMap.set(o.date.toISOString().split('T')[0], o.baseRate));
+
+      // Fetch all inventory in range for occupancy check
+      const inventories = await this.prisma.inventoryCalendar.findMany({
+          where: {
+              roomTypeId,
+              date: {
+                  gte: new Date(checkIn),
+                  lt: new Date(checkOut)
+              }
+          }
+      });
+      const invMap = new Map<string, number>();
+      inventories.forEach(i => invMap.set(i.date.toISOString().split('T')[0], i.allotment));
 
       while(d < checkOut) {
           const dateKey = d.toISOString().split('T')[0];
           
-          if (overrideMap.has(dateKey)) {
-              total += overrideMap.get(dateKey)!;
-          } else {
-              let nightly = roomType.basePrice || 1000;
-              // If we want to be strict, we can query ratePlan.breakfastPrice here, 
-              // but RatesService is a primitive fallback.
-              total += nightly;
+          let nightly = overrideMap.has(dateKey) ? overrideMap.get(dateKey)! : (roomType.basePrice || 1000);
+          
+          // --- APPLY YIELD MANAGEMENT RULES ---
+          let modifiedNightly = nightly;
+          const daysToArrival = Math.max(0, Math.floor((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
+          const availableRooms = invMap.has(dateKey) ? invMap.get(dateKey)! : totalRooms;
+          const occupancyPercent = totalRooms > 0 ? ((totalRooms - availableRooms) / totalRooms) * 100 : 0;
+
+          for (const rule of yieldRules) {
+              let conditionMet = false;
+
+              // Check condition
+              if (rule.triggerType === 'OCCUPANCY') {
+                  if (rule.conditionOp === 'GREATER_THAN' && occupancyPercent > rule.conditionValue) conditionMet = true;
+                  if (rule.conditionOp === 'LESS_THAN' && occupancyPercent < rule.conditionValue) conditionMet = true;
+              } else if (rule.triggerType === 'DAYS_TO_ARRIVAL') {
+                  if (rule.conditionOp === 'GREATER_THAN' && daysToArrival > rule.conditionValue) conditionMet = true;
+                  if (rule.conditionOp === 'LESS_THAN' && daysToArrival < rule.conditionValue) conditionMet = true;
+              }
+
+              // Apply adjustment if condition met
+              if (conditionMet) {
+                  let adjAmount = rule.adjustmentType === 'PERCENTAGE' 
+                      ? (nightly * (rule.adjustmentValue / 100))
+                      : rule.adjustmentValue;
+
+                  if (rule.adjustmentOp === 'DECREASE') {
+                      modifiedNightly -= adjAmount;
+                  } else {
+                      modifiedNightly += adjAmount;
+                  }
+              }
           }
+
+          // Ensure price never drops below 0
+          total += Math.max(0, modifiedNightly);
           d.setDate(d.getDate() + 1);
       }
 

@@ -26,7 +26,7 @@ import { UploadModule } from '@/modules/upload/upload.module';
 import { MessagesModule } from '@/modules/messages/messages.module';
 import { SettingsModule } from '@/modules/settings/settings.module';
 
-import { ExpensesModule } from './modules/expenses/expenses.module';
+import { AccountingModule } from './modules/accounting/accounting.module';
 import { GuestsModule } from './modules/guests/guests.module';
 import { StaffModule } from './modules/staff/staff.module';
 
@@ -38,6 +38,9 @@ import { IcalModule } from './modules/ical/ical.module';
 import { HousekeepingModule } from './modules/housekeeping/housekeeping.module';
 import { ChannelsModule } from './modules/channels/channels.module';
 import { EventsModule } from './modules/events/events.module';
+import { CheckinModule } from './modules/checkin/checkin.module';
+import { YieldModule } from './modules/yield/yield.module';
+import { ActivityLogsModule } from './modules/activity-logs/activity-logs.module';
 
 @Module({
   imports: [
@@ -64,7 +67,7 @@ import { EventsModule } from './modules/events/events.module';
     AvailabilityModule,
     RatesModule,
     OwnersModule,
-    ExpensesModule,
+    AccountingModule,
     GuestsModule,
     StaffModule,
     NightAuditModule,
@@ -72,9 +75,12 @@ import { EventsModule } from './modules/events/events.module';
     DownloadsModule,
     SubscriptionsModule,
     IcalModule,
+    YieldModule,
     HousekeepingModule,
     ChannelsModule,
     EventsModule,
+    CheckinModule,
+    ActivityLogsModule,
   ],
   providers: [PrismaService],
 })

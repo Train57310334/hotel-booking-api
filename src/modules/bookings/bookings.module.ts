@@ -4,13 +4,13 @@ import { BookingsService } from './bookings.service';
 import { PrismaService } from '@/common/prisma/prisma.service';
 import { NotificationsModule } from '@/modules/notifications/notifications.module';
 import { InventoryModule } from '@/modules/inventory/inventory.module';
-
+import { ReviewsModule } from '@/modules/reviews/reviews.module';
 import { JwtModule } from '@nestjs/jwt';
-
 import { EventsModule } from '@/modules/events/events.module';
+import { ActivityLogsModule } from '@/modules/activity-logs/activity-logs.module';
 
 @Module({
-  imports: [NotificationsModule, InventoryModule, JwtModule, EventsModule],
+  imports: [NotificationsModule, InventoryModule, JwtModule, EventsModule, ReviewsModule, ActivityLogsModule],
   controllers: [BookingsController],
   providers: [BookingsService, PrismaService],
   exports: [BookingsService],

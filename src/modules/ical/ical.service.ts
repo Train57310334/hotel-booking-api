@@ -138,4 +138,96 @@ export class IcalService {
         this.logger.error(`Fatal error in syncExternalIcal: ${e.message}`);
     }
   }
+
+  /**
+   * Public method to sync a SINGLE hotel on-demand (called by ChannelsService.triggerSync)
+   */
+  async syncForHotel(hotelId: string) {
+    this.logger.log(`Manual iCal sync triggered for hotel: ${hotelId}`);
+    try {
+        const roomTypes = await this.prisma.roomType.findMany({
+            where: { hotelId, icalUrl: { not: null }, deletedAt: null },
+            include: { ratePlans: true }
+        });
+
+        let syncedCount = 0;
+
+        for (const roomType of roomTypes) {
+            const url = roomType.icalUrl!;
+            try {
+                const events = await nodeIcal.async.fromURL(url);
+                const activeUids = new Set<string>();
+
+                for (const eventId in events) {
+                    const event = events[eventId];
+                    if (event.type !== 'VEVENT') continue;
+                    const start = event.start as Date;
+                    const end = event.end as Date;
+                    if (!event.uid || !start || !end) continue;
+                    if (end < new Date()) continue;
+
+                    const uid = (typeof event.uid === 'object' && event.uid !== null) ? (event.uid as any).val : event.uid;
+                    const summary = typeof event.summary === 'object' ? (event.summary as any).val : event.summary;
+                    const externalRef = `OTA-SYNC-${uid}`;
+                    activeUids.add(externalRef);
+
+                    const existing = await this.prisma.booking.findFirst({
+                        where: { roomTypeId: roomType.id, notes: { contains: externalRef } }
+                    });
+
+                    if (!existing) {
+                        await this.prisma.booking.create({
+                            data: {
+                                hotelId,
+                                roomTypeId: roomType.id,
+                                ratePlanId: roomType.ratePlans?.[0]?.id || 'unknown',
+                                status: 'confirmed',
+                                checkIn: start,
+                                checkOut: end,
+                                guestsAdult: 0,
+                                guestsChild: 0,
+                                leadName: summary || 'External Booking',
+                                leadEmail: 'ota@sync.local',
+                                leadPhone: '-',
+                                totalAmount: 0,
+                                source: 'OTA',
+                                notes: `[DO NOT DELETE] ${externalRef}\nImported via iCal Sync from ${url}`
+                            }
+                        });
+                        syncedCount++;
+                    }
+                }
+
+                // Deletion sweep: remove OTA bookings whose UID is no longer in the remote feed
+                const existingOtaBookings = await this.prisma.booking.findMany({
+                    where: { roomTypeId: roomType.id, source: 'OTA', notes: { contains: 'OTA-SYNC-' } },
+                    select: { id: true, notes: true }
+                });
+                for (const b of existingOtaBookings) {
+                    const refMatch = (b.notes || '').match(/OTA-SYNC-\S+/);
+                    const ref = refMatch ? refMatch[0] : null;
+                    if (ref && !activeUids.has(ref)) {
+                        await this.prisma.booking.delete({ where: { id: b.id } });
+                        this.logger.log(`Deleted stale OTA booking: ${b.id} (${ref})`);
+                    }
+                }
+
+                // Update last synced timestamp
+                await this.prisma.roomType.update({
+                    where: { id: roomType.id },
+                    data: { icalLastSyncedAt: new Date() }
+                });
+
+            } catch (fetchErr: any) {
+                this.logger.error(`Failed to sync ${roomType.name}: ${fetchErr.message}`);
+            }
+        }
+
+        this.logger.log(`Manual iCal sync completed for hotel ${hotelId}. Synced ${syncedCount} new events.`);
+        return { syncedCount };
+    } catch (e: any) {
+        this.logger.error(`Fatal error in syncForHotel: ${e.message}`);
+        throw e;
+    }
+  }
 }

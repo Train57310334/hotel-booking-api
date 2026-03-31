@@ -28,8 +28,9 @@ export class PromotionsService {
     return this.prisma.promotion.create({
       data: {
         ...data,
-        startDate: new Date(data.startDate),
-        endDate: new Date(data.endDate)
+        maxUses: data.maxUses ? Number(data.maxUses) : null,
+        startDate: new Date(data.startDate as string | Date),
+        endDate: new Date(data.endDate as string | Date)
       }
     });
   }
@@ -63,13 +64,14 @@ export class PromotionsService {
         where: { id },
         data: {
             ...data,
+            maxUses: data.maxUses !== undefined ? (data.maxUses ? Number(data.maxUses) : null) : undefined,
             startDate: data.startDate ? new Date(data.startDate as string) : undefined,
             endDate: data.endDate ? new Date(data.endDate as string) : undefined
         }
     });
   }
 
-  async validateCode(code: string, purchaseAmount: number) {
+  async validateCode(code: string, purchaseAmount: number, hotelId?: string) {
     const promo = await this.prisma.promotion.findUnique({
       where: { code },
       include: { hotel: true }
@@ -77,6 +79,14 @@ export class PromotionsService {
 
     if (!promo) {
       throw new NotFoundException('Invalid promo code');
+    }
+
+    if (!promo.isActive) {
+      throw new BadRequestException('This promotion code is inactive.');
+    }
+
+    if (promo.hotelId && hotelId && promo.hotelId !== hotelId) {
+      throw new BadRequestException('This promotion code is not valid for this hotel.');
     }
 
     // Check if the hotel still has the right to use promotions (in case of downgrade)
@@ -87,6 +97,10 @@ export class PromotionsService {
     const now = new Date();
     if (now < promo.startDate || now > promo.endDate) {
        throw new BadRequestException('Promotion expired or not yet active');
+    }
+
+    if (promo.maxUses !== null && promo.usedCount >= promo.maxUses) {
+       throw new BadRequestException('Promotion usage limit reached.');
     }
 
     // Calculate discount
@@ -105,6 +119,7 @@ export class PromotionsService {
     return {
       valid: true,
       code: promo.code,
+      id: promo.id,
       type: promo.type,
       value: promo.value,
       discountAmount

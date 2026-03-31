@@ -12,8 +12,8 @@ export class PromotionsController {
   constructor(private readonly promotionsService: PromotionsService) {}
 
   @Post('validate')
-  validate(@Body() body: { code: string; amount: number }) {
-    return this.promotionsService.validateCode(body.code, body.amount);
+  validate(@Body() body: { code: string; amount: number; hotelId?: string }) {
+    return this.promotionsService.validateCode(body.code, body.amount, body.hotelId);
   }
 
   // --- Admin Routes ---

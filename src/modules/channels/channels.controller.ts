@@ -1,23 +1,29 @@
-import { Controller, Get, Post, Query, UseGuards, Param } from '@nestjs/common';
+import { Controller, Get, Put, Post, Param, Body, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ChannelsService } from './channels.service';
 
 @ApiTags('channels')
 @Controller('channels')
+@UseGuards(JwtAuthGuard)
 export class ChannelsController {
   constructor(private readonly channelsService: ChannelsService) {}
 
-  @UseGuards(JwtAuthGuard)
-  @Get('status')
-  getChannelStatuses(@Query('hotelId') hotelId: string) {
-    if (!hotelId) throw new Error('hotelId is required');
-    return this.channelsService.getChannelStatuses(hotelId);
+  @Get(':hotelId')
+  getChannelStatus(@Param('hotelId') hotelId: string) {
+    return this.channelsService.getChannelStatus(hotelId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @Put('roomtype/:id/ical')
+  updateIcalUrl(
+    @Param('id') id: string,
+    @Body('url') url: string,
+  ) {
+    return this.channelsService.updateIcalUrl(id, url || null);
+  }
+
   @Post(':hotelId/sync')
-  syncInventory(@Param('hotelId') hotelId: string) {
-    return this.channelsService.syncInventory(hotelId);
+  triggerSync(@Param('hotelId') hotelId: string) {
+    return this.channelsService.triggerSync(hotelId);
   }
 }

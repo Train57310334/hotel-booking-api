@@ -10,9 +10,20 @@ export class MessagesController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
+  @Get('unread-count')
+  getUnreadCount(@Query('hotelId') hotelId: string) {
+    return this.svc.getUnreadCount(hotelId);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @Get()
-  findAll(@Query('search') search?: string, @Query('hotelId') hotelId?: string) {
-    return this.svc.findAll(search, hotelId);
+  findAll(
+    @Query('search') search?: string,
+    @Query('hotelId') hotelId?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.svc.findAll(search, hotelId, status);
   }
 
   // Public endpoint for "Contact Us" form
@@ -34,11 +45,15 @@ export class MessagesController {
   markAsRead(@Param('id') id: string) {
     return this.svc.markAsRead(id);
   }
+
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Post(':id/reply')
-  reply(@Param('id') id: string, @Body() body: { content: string }) {
-    return this.svc.reply(id, body.content);
+  reply(
+    @Param('id') id: string,
+    @Body() body: { content: string; staffName?: string },
+  ) {
+    return this.svc.reply(id, body.content, body.staffName);
   }
 
   @ApiBearerAuth()

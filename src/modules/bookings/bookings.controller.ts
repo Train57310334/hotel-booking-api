@@ -293,6 +293,13 @@ export class BookingsController {
     return this.svc.getDashboardStatsNew(hotelId, period);
   }
 
+  @UseGuards(JwtAuthGuard, HotelAuthGuard)
+  @Get('admin/daily-operations')
+  async getDailyOperationsStats(@Query('hotelId') hotelId?: string) {
+    if (!hotelId) throw new ForbiddenException('Hotel ID is required');
+    return this.svc.getDailyOperationsStats(hotelId);
+  }
+
   /**
    * 📋 Admin: Get All Bookings
    */
@@ -340,6 +347,23 @@ export class BookingsController {
   @Post(':id/request-feedback')
   async requestFeedback(@Param('id') id: string) {
     return this.svc.requestFeedback(id);
+  }
+
+  /**
+   * 📅 Admin: Reschedule Booking (Drag & Drop support)
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard, HotelAuthGuard)
+  @Roles('owner', 'admin', 'reception')
+  @Put('admin/:id/reschedule')
+  async rescheduleAdmin(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() body: { roomId: string; checkIn: string; checkOut: string },
+    @Query('hotelId') hotelId: string
+  ) {
+    if (!hotelId) throw new ForbiddenException('Hotel ID is required');
+    const userId = req.user?.userId;
+    return this.svc.rescheduleAdmin(id, hotelId, body.roomId, body.checkIn, body.checkOut, userId);
   }
 
   /**

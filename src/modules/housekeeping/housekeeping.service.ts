@@ -86,33 +86,67 @@ export class HousekeepingService {
    * Updates an individual room's physical status and logs it.
    */
   async updateRoomStatus(roomId: string, status: RoomStatus, userId?: string, note?: string) {
-    // 1. Verify Room exists
-    const room = await this.prisma.room.findUnique({
-      where: { id: roomId }
-    });
-    if (!room) {
-      throw new NotFoundException(`Room with ID ${roomId} not found`);
-    }
+    const room = await this.prisma.room.findUnique({ where: { id: roomId } });
+    if (!room) throw new NotFoundException(`Room with ID ${roomId} not found`);
 
-    // 2. Perform the update and create a log atomically
     const updatedRoom = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.room.update({
-        where: { id: roomId },
-        data: { status }
-      });
-
+      const updated = await tx.room.update({ where: { id: roomId }, data: { status } });
       await tx.roomStatusLog.create({
-        data: {
-          roomId,
-          status,
-          updatedBy: userId || null,
-          note: note || null,
-        }
+        data: { roomId, status, updatedBy: userId || null, note: note || null },
       });
-
       return updated;
     });
 
     return updatedRoom;
+  }
+
+  // ─── Maintenance Reports ─────────────────────────────────────────────────────
+
+  async createMaintenanceReport(
+    roomId: string,
+    data: { category: string; description: string; priority?: string; reportedBy?: string },
+  ) {
+    const room = await this.prisma.room.findUnique({ where: { id: roomId } });
+    if (!room) throw new NotFoundException(`Room ${roomId} not found`);
+
+    return this.prisma.maintenanceReport.create({
+      data: {
+        roomId,
+        category: data.category,
+        description: data.description,
+        priority: data.priority || 'NORMAL',
+        reportedBy: data.reportedBy || null,
+        status: 'OPEN',
+      },
+      include: { room: { select: { roomNumber: true } } },
+    });
+  }
+
+  async getMaintenanceReports(hotelId: string) {
+    return this.prisma.maintenanceReport.findMany({
+      where: {
+        room: { roomType: { hotelId } },
+        status: { not: 'RESOLVED' },
+      },
+      include: {
+        room: {
+          select: {
+            roomNumber: true,
+            roomType: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
+    });
+  }
+
+  async resolveMaintenanceReport(reportId: string) {
+    const report = await this.prisma.maintenanceReport.findUnique({ where: { id: reportId } });
+    if (!report) throw new NotFoundException(`Report ${reportId} not found`);
+
+    return this.prisma.maintenanceReport.update({
+      where: { id: reportId },
+      data: { status: 'RESOLVED', resolvedAt: new Date() },
+    });
   }
 }

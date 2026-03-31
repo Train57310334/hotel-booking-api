@@ -118,6 +118,7 @@ export class NightAuditService {
             checkOut: true,
             roomTypeId: true,
             totalAmount: true,
+            folioCharges: true
           }
       });
 
@@ -133,11 +134,13 @@ export class NightAuditService {
       const occupiedRooms = activeBookings.length;
 
       // 3. Calculate Revenue for Yesterday
-      // Simple Logic: TotalBookingAmount / Nights
+      // Simple Logic: (TotalBookingAmount + FolioCharges) / Nights
       let dailyRevenue = 0;
       for (const booking of activeBookings) {
           const nights = Math.max(1, Math.ceil((new Date(booking.checkOut).getTime() - new Date(booking.checkIn).getTime()) / (1000 * 60 * 60 * 24)));
-          dailyRevenue += (booking.totalAmount || 0) / nights;
+          const roomTotal = booking.totalAmount || 0;
+          const folioTotal = booking.folioCharges ? booking.folioCharges.reduce((acc, c) => acc + c.amount, 0) : 0;
+          dailyRevenue += (roomTotal + folioTotal) / nights;
       }
 
       // 4. Metrics

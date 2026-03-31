@@ -12,7 +12,7 @@ export class ReportsService {
     const revenue = await this.prisma.$queryRaw`
       SELECT 
         DATE("checkIn") as date, 
-        SUM("totalAmount") as value
+        SUM("totalAmount" + COALESCE((SELECT SUM(amount) FROM "FolioCharge" WHERE "bookingId" = "Booking"."id"), 0)) as value
       FROM "Booking"
       WHERE "hotelId" = ${hotelId}
       AND "status" NOT IN ('cancelled', 'pending')
@@ -105,8 +105,8 @@ export class ReportsService {
   async getSummary(hotelId: string, from: Date, to: Date) {
       // ✅ BUG FIX: Use checkIn date range for revenue (matches what guest actually paid for)
       // Using createdAt would include bookings created in range but for different stay dates
-      const revenue = await this.prisma.booking.aggregate({
-          _sum: { totalAmount: true },
+      const bookingsList = await this.prisma.booking.findMany({
+          include: { folioCharges: true },
           where: { 
               hotelId,
               checkIn: { gte: from, lte: to },
@@ -114,23 +114,26 @@ export class ReportsService {
           }
       });
       
-      const bookings = await this.prisma.booking.count({
-          where: { hotelId, checkIn: { gte: from, lte: to } }
-      });
+      const bookingsCount = bookingsList.length;
 
       const expenses = await (this.prisma as any).expense.aggregate({
           _sum: { amount: true },
           where: { hotelId, date: { gte: from, lte: to } }
       });
 
-      const totalRevenue = revenue._sum.totalAmount || 0;
+      const totalRevenue = bookingsList.reduce((sum, b) => {
+          const roomTotal = b.totalAmount || 0;
+          const folioTotal = b.folioCharges ? b.folioCharges.reduce((acc, c) => acc + c.amount, 0) : 0;
+          return sum + roomTotal + folioTotal;
+      }, 0);
+
       const totalExpenses = expenses._sum.amount || 0;
 
       return {
           totalRevenue,
           totalExpenses,
           totalProfit: totalRevenue - totalExpenses,
-          totalBookings: bookings
+          totalBookings: bookingsCount
       };
   }
 
@@ -211,5 +214,192 @@ export class ReportsService {
       xlsx.utils.book_append_sheet(wb, expSheet, 'Expenses Log');
 
       return xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  }
+
+  // ─── Night Audit ─────────────────────────────────────────────────────────────
+
+  async runNightAudit(hotelId: string) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const hotel = await this.prisma.hotel.findUnique({ where: { id: hotelId } });
+    if (!hotel) throw new Error('Hotel not found');
+
+    // 1. Auto-checkout: find overdue checked-in bookings
+    const overdueBookings = await this.prisma.booking.findMany({
+      where: {
+        hotelId,
+        status: 'checked_in',
+        checkOut: { lt: today },
+      },
+      include: { room: true },
+    });
+
+    for (const booking of overdueBookings) {
+      await this.prisma.booking.update({
+        where: { id: booking.id },
+        data: { status: 'checked_out' },
+      });
+      // Reset the room to DIRTY
+      if (booking.roomId) {
+        await this.prisma.room.update({
+          where: { id: booking.roomId },
+          data: { status: 'DIRTY' },
+        });
+        await this.prisma.roomStatusLog.create({
+          data: {
+            roomId: booking.roomId,
+            status: 'DIRTY',
+            note: 'Auto-reset by Night Audit',
+          },
+        });
+      }
+    }
+
+    // 2. Snapshot KPIs for today
+    const totalRooms = await this.prisma.room.count({
+      where: { roomType: { hotelId }, deletedAt: null },
+    });
+
+    const stayingTonight = await this.prisma.booking.findMany({
+      where: {
+        hotelId,
+        status: { in: ['confirmed', 'checked_in'] },
+        checkIn: { lt: tomorrow },
+        checkOut: { gt: today },
+      },
+      include: { folioCharges: true, roomType: { select: { name: true } } },
+    });
+
+    const occupiedCount = stayingTonight.length;
+    const occupancyRate = totalRooms > 0 ? (occupiedCount / totalRooms) * 100 : 0;
+    const totalRevenue = stayingTonight.reduce((sum, b) => {
+      const folioTotal = b.folioCharges?.reduce((a, c) => a + c.amount, 0) || 0;
+      return sum + (b.totalAmount || 0) + folioTotal;
+    }, 0);
+    const adr = occupiedCount > 0 ? totalRevenue / occupiedCount : 0;
+    const revPar = totalRooms > 0 ? totalRevenue / totalRooms : 0;
+
+    // Upsert DailyStat for today
+    await this.prisma.dailyStat.upsert({
+      where: { date: today },
+      create: {
+        date: today,
+        totalRevenue,
+        totalBookings: occupiedCount,
+        occupiedRooms: occupiedCount,
+        occupancyRate,
+        adr,
+        revPar,
+      },
+      update: {
+        totalRevenue,
+        totalBookings: occupiedCount,
+        occupiedRooms: occupiedCount,
+        occupancyRate,
+        adr,
+        revPar,
+      },
+    });
+
+    // 3. Gather today's check-ins and check-outs for the summary
+    const checkIns = await this.prisma.booking.findMany({
+      where: { hotelId, checkIn: { gte: today, lt: tomorrow }, status: { not: 'cancelled' } },
+      include: { roomType: { select: { name: true } } },
+    });
+    const checkOuts = await this.prisma.booking.findMany({
+      where: {
+        hotelId,
+        checkOut: { gte: today, lt: tomorrow },
+        status: { in: ['checked_out', 'checked_in', 'confirmed'] },
+      },
+      include: { roomType: { select: { name: true } } },
+    });
+
+    return {
+      auditDate: today.toISOString(),
+      hotelName: hotel.name,
+      kpis: { totalRooms, occupiedCount, occupancyRate, totalRevenue, adr, revPar },
+      autoCheckedOut: overdueBookings.length,
+      checkIns: checkIns.map(b => ({
+        id: b.id, leadName: b.leadName, roomType: b.roomType?.name,
+        checkIn: b.checkIn, checkOut: b.checkOut, totalAmount: b.totalAmount, status: b.status,
+      })),
+      checkOuts: checkOuts.map(b => ({
+        id: b.id, leadName: b.leadName, roomType: b.roomType?.name,
+        checkIn: b.checkIn, checkOut: b.checkOut, totalAmount: b.totalAmount, status: b.status,
+      })),
+      staying: stayingTonight.map(b => ({
+        id: b.id, leadName: b.leadName, roomType: b.roomType?.name,
+        checkIn: b.checkIn, checkOut: b.checkOut, totalAmount: b.totalAmount, status: b.status,
+      })),
+    };
+  }
+
+  async getLatestAudit(hotelId: string) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const hotel = await this.prisma.hotel.findUnique({ where: { id: hotelId } });
+    const stat = await this.prisma.dailyStat.findFirst({
+      where: { date: { gte: today } },
+      orderBy: { date: 'desc' },
+    });
+    const totalRooms = await this.prisma.room.count({
+      where: { roomType: { hotelId }, deletedAt: null },
+    });
+    const checkIns = await this.prisma.booking.findMany({
+      where: { hotelId, checkIn: { gte: today, lt: tomorrow }, status: { not: 'cancelled' } },
+      include: { roomType: { select: { name: true } } },
+      orderBy: { checkIn: 'asc' },
+    });
+    const checkOuts = await this.prisma.booking.findMany({
+      where: {
+        hotelId,
+        checkOut: { gte: today, lt: tomorrow },
+        status: { in: ['checked_out', 'checked_in', 'confirmed'] },
+      },
+      include: { roomType: { select: { name: true } } },
+      orderBy: { checkOut: 'asc' },
+    });
+    const staying = await this.prisma.booking.findMany({
+      where: {
+        hotelId,
+        status: { in: ['confirmed', 'checked_in'] },
+        checkIn: { lt: today },
+        checkOut: { gt: tomorrow },
+      },
+      include: { roomType: { select: { name: true } } },
+    });
+
+    return {
+      auditDate: today.toISOString(),
+      hotelName: hotel?.name,
+      hasRun: !!stat,
+      kpis: stat ? {
+        totalRooms,
+        occupiedCount: stat.occupiedRooms,
+        occupancyRate: stat.occupancyRate,
+        totalRevenue: stat.totalRevenue,
+        adr: stat.adr,
+        revPar: stat.revPar,
+      } : null,
+      checkIns: checkIns.map(b => ({
+        id: b.id, leadName: b.leadName, roomType: b.roomType?.name,
+        checkIn: b.checkIn, checkOut: b.checkOut, totalAmount: b.totalAmount, status: b.status,
+      })),
+      checkOuts: checkOuts.map(b => ({
+        id: b.id, leadName: b.leadName, roomType: b.roomType?.name,
+        checkIn: b.checkIn, checkOut: b.checkOut, totalAmount: b.totalAmount, status: b.status,
+      })),
+      staying: staying.map(b => ({
+        id: b.id, leadName: b.leadName, roomType: b.roomType?.name,
+        checkIn: b.checkIn, checkOut: b.checkOut, totalAmount: b.totalAmount, status: b.status,
+      })),
+    };
   }
 }

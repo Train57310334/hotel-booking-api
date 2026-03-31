@@ -6,5 +6,6 @@ import { PrismaService } from '@/common/prisma/prisma.service';
 @Module({
   controllers: [IcalController],
   providers: [IcalService, PrismaService],
+  exports: [IcalService],
 })
 export class IcalModule {}

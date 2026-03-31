@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { json, urlencoded } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
@@ -9,6 +10,10 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.enableCors({ origin: true, credentials: true });
+  
+  // Increase payload limit to 50MB for Base64 image uploads (Passports/Signatures)
+  app.use(json({ limit: '50mb' }));
+  app.use(urlencoded({ extended: true, limit: '50mb' }));
 
   const config = new DocumentBuilder()
     .setTitle('Hotel Booking API')
@@ -25,4 +30,4 @@ async function bootstrap() {
 }
 bootstrap();
 // Force Restart
-// Force Restart 4
+// Force Restart 5
