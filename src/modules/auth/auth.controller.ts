@@ -34,13 +34,21 @@ export class AuthController {
   async getProfile(@Req() req: any) {
     const profile = await this.authService.getProfile(req.user.userId);
     if (profile && req.user.roles) {
-      // Use roles from the JWT context (handles impersonation stripping of platform_admin)
+      // Use roles from the JWT context (handles impersonation)
       profile.roles = req.user.roles;
-      
-      // If impersonating, the JWT contains a forced hotelId. Override DB roleAssignments globally
-      if (req.user.hotelId) {
-          (profile as any).roleAssignments = [{ hotelId: req.user.hotelId, role: 'owner' }];
-          (profile as any).isImpersonating = true;
+
+      const isPlatformAdmin = req.user.roles?.includes('platform_admin');
+      const isActiveImpersonation = !!req.user.isImpersonating; // only true when JWT was issued via /impersonate
+
+      if (isActiveImpersonation && req.user.hotelId) {
+        // Active impersonation session: override roleAssignments with the impersonated hotel
+        (profile as any).roleAssignments = [{ hotelId: req.user.hotelId, role: 'owner' }];
+        (profile as any).isImpersonating = true;
+      } else if (isPlatformAdmin && !isActiveImpersonation) {
+        // Normal Super Admin login: clear roleAssignments so frontend sees them as platform admin only
+        // This prevents AdminContext from defaulting to a hotel context
+        (profile as any).roleAssignments = [];
+        (profile as any).isImpersonating = false;
       }
     }
     return profile;

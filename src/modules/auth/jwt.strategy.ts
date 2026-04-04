@@ -15,6 +15,7 @@ interface CachedUser {
   email: string;
   roles: string[];
   hotelId: string | null;
+  isImpersonating: boolean;
   roleAssignments: any[];
   expiresAt: number; // epoch ms
 }
@@ -56,6 +57,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         email: cached.email,
         roles: cached.roles,
         hotelId: cached.hotelId,
+        isImpersonating: cached.isImpersonating,
         roleAssignments: cached.roleAssignments,
       };
     }
@@ -72,11 +74,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       return null;
     }
 
+    // Platform Admins logging in normally should NOT have a hotel context
+    // (only during explicit impersonation sessions)
+    const isPlatformAdmin = user.roles?.includes('platform_admin');
+
     const hotelId = isImpersonating
       ? impersonatedHotelId
-      : (user.roleAssignments && user.roleAssignments.length > 0
-          ? user.roleAssignments[0].hotelId
-          : null);
+      : (isPlatformAdmin
+          ? null  // Super Admin: no hotel context unless actively impersonating
+          : (user.roleAssignments && user.roleAssignments.length > 0
+              ? user.roleAssignments[0].hotelId
+              : null));
 
     let roles = user.roles;
     if (isImpersonating) {
@@ -91,6 +99,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       email: user.email,
       roles,
       hotelId,
+      isImpersonating,
       roleAssignments: user.roleAssignments,
       expiresAt: now + USER_CACHE_TTL_MS,
     };
@@ -103,6 +112,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       email: freshUser.email,
       roles: freshUser.roles,
       hotelId: freshUser.hotelId,
+      isImpersonating: freshUser.isImpersonating,
       roleAssignments: freshUser.roleAssignments,
     };
   }
