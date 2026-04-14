@@ -112,6 +112,8 @@ async function main() {
     await prisma.room.deleteMany({})
     await prisma.inventoryCalendar.deleteMany({})
     await prisma.roomType.deleteMany({})
+    await prisma.activityLog.deleteMany({})
+    await prisma.subscriptionPayment.deleteMany({})
     await prisma.hotel.deleteMany({})
     console.log('✅  Data cleared')
 
@@ -621,17 +623,57 @@ async function main() {
     })
     console.log('✅  Promotions seeded')
 
+    // ── 16. Second Hotel (LITE Package) for Demo ──────────────────────────────
+    console.log('\n🏨  Creating Cozy Homestay (LITE Package)...')
+    const hotelLite = await prisma.hotel.create({
+        data: {
+            name: 'Cozy River Homestay',
+            description: 'A small, friendly homestay by the river. Perfect for weekend getaways.',
+            address: '456 Charoen Nakhon Rd',
+            city: 'Bangkok',
+            country: 'Thailand',
+            contactEmail: 'hello@cozyhomestay.com',
+            imageUrl: 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&q=80&w=1200',
+            package: 'LITE',
+            ownerId: adminUser.id,
+            hasPromotions: false,
+            hasOnlinePayment: false,
+            hasAdvancedAnalytics: false,
+        }
+    })
+
+    await prisma.roleAssignment.create({
+        data: { userId: adminUser.id, hotelId: hotelLite.id, role: 'hotel_admin' }
+    })
+    
+    const liteRoomType = await prisma.roomType.create({
+        data: {
+            hotelId: hotelLite.id,
+            name: 'Standard Room',
+            basePrice: 1200,
+            sizeSqm: 25,
+            bedConfig: 'Queen Bed',
+            maxAdults: 2, maxChildren: 0,
+            amenities: ['Free Wi-Fi', 'Air Conditioning'],
+        }
+    })
+
+    await prisma.room.create({ data: { roomNumber: '101', roomTypeId: liteRoomType.id, status: 'CLEAN' } })
+    await prisma.room.create({ data: { roomNumber: '102', roomTypeId: liteRoomType.id, status: 'OCCUPIED' } })
+
+    console.log(`✅  Cozy Homestay (LITE) created`)
+
     // ── Summary ───────────────────────────────────────────────────────────────
     console.log('\n' + '═'.repeat(55))
     console.log('   ✅  FULL DEMO SEED COMPLETE')
     console.log('═'.repeat(55))
-    console.log(`   Hotel:     ${hotel.name}`)
-    console.log(`   Hotel ID:  ${hotel.id}`)
+    console.log(`   Hotel 1:   ${hotel.name} (PRO)`)
+    console.log(`   Hotel 2:   ${hotelLite.name} (LITE)`)
     console.log(`   Login:     ${ADMIN_EMAIL}`)
     console.log(`   Password:  ${ADMIN_PASS}`)
     console.log('═'.repeat(55))
     console.log('\n📌  Seeded Summary:')
-    console.log(`   🏨  1 Hotel, ${roomTypes.length} Room Types, ${createdRooms.length} Physical Rooms`)
+    console.log(`   🏨  2 Hotels, ${roomTypes.length + 1} Room Types, ${createdRooms.length + 2} Physical Rooms`)
     console.log(`   📋  ${createdBookings.length} Bookings (past/active/future/cancelled)`)
     console.log(`   📊  60 days DailyStat (Night Audit data)`)
     console.log(`   💼  ${expenseTemplates.length} Expense records`)

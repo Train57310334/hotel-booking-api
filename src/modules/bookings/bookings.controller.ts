@@ -285,15 +285,16 @@ export class BookingsController {
     return this.svc.getCalendarEvents(hotelId, start, end);
   }
 
-  @UseGuards(JwtAuthGuard, HotelAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, HotelAuthGuard)
+  @Roles('platform_admin', 'owner', 'admin', 'reception')
   @Get('admin/dashboard')
   async getDashboardStats(@Req() req, @Query('period') period?: string, @Query('hotelId') hotelId?: string) {
-    // TODO: Add Role Guard here
     if (!hotelId) throw new ForbiddenException('Hotel ID is required');
     return this.svc.getDashboardStatsNew(hotelId, period);
   }
 
-  @UseGuards(JwtAuthGuard, HotelAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, HotelAuthGuard)
+  @Roles('platform_admin', 'owner', 'admin', 'reception', 'housekeeper')
   @Get('admin/daily-operations')
   async getDailyOperationsStats(@Query('hotelId') hotelId?: string) {
     if (!hotelId) throw new ForbiddenException('Hotel ID is required');
@@ -303,7 +304,8 @@ export class BookingsController {
   /**
    * 📋 Admin: Get All Bookings
    */
-  @UseGuards(JwtAuthGuard, HotelAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, HotelAuthGuard)
+  @Roles('platform_admin', 'owner', 'admin', 'reception')
   @Get('admin/all')
   async getAllBookings(
     @Req() req, 
@@ -314,7 +316,6 @@ export class BookingsController {
     @Query('status') status?: string,
     @Query('order') order?: string
   ) {
-    // TODO: Add Role Guard here
     if (!hotelId) throw new ForbiddenException('Hotel ID is required');
     return this.svc.findAll(hotelId, search, status, 'createdAt', order, page, limit);
   }
@@ -337,7 +338,6 @@ export class BookingsController {
   @Roles('owner', 'admin', 'reception') // Reception can check-in/out
   @Put('admin/:id/status')
   async updateStatus(@Req() req, @Param('id') id: string, @Body('status') status: string, @Query('hotelId') hotelId: string) {
-    // TODO: Add Role Guard here
     if (!hotelId) throw new ForbiddenException('Hotel ID is required');
     const userId = req.user?.userId;
     return this.svc.updateStatus(id, status, hotelId, userId);
