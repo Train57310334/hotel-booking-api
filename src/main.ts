@@ -13,15 +13,26 @@ async function bootstrap() {
 
   // ─── CORS: load allowed origins from DB (UI-configurable) ────────────────
   // SettingsService reads from SystemSetting table first, then falls back to
-  // the ALLOWED_ORIGINS env var if no DB record has been set yet.
+  // the ALLOWED_ORIGINS env var, then to production defaults.
   // Super Admins can update this at runtime via /admin/super/cms → Security tab
   // without needing to SSH into the server.
   //
-  // NOTE: Changes to allowedOrigins in the DB take effect on the NEXT  
+  // NOTE: Changes to allowedOrigins in the DB take effect on the NEXT
   // server restart (CORS is a bootstrap-time config, not per-request).
   const settingsService = app.get(SettingsService);
   const allowedOrigins = await settingsService.getCorsOrigins();
-  app.enableCors({ origin: allowedOrigins, credentials: true });
+  app.enableCors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, server-to-server)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      console.warn(`🚫 CORS blocked origin: ${origin}`);
+      return callback(new Error(`CORS: origin ${origin} is not allowed`), false);
+    },
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  });
   console.log(`🔒 CORS allowed origins: ${allowedOrigins.join(', ')}`);
   
   // Increase payload limit to 50MB for Base64 image uploads (Passports/Signatures)

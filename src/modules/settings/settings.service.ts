@@ -157,7 +157,13 @@ export class SettingsService {
    */
   async getCorsOrigins(): Promise<string[]> {
     const raw = await this.get('allowedOrigins', 'ALLOWED_ORIGINS');
-    return (raw || 'http://localhost:3000')
+    // Default to production + local origins when DB & env var both unset
+    const DEFAULT_ORIGINS = [
+      'https://app.bookingkub.com',
+      'https://bookingkub.com',
+      'http://localhost:3000',
+    ].join(',');
+    return (raw || DEFAULT_ORIGINS)
       .split(',')
       .map(o => o.trim())
       .filter(Boolean);
