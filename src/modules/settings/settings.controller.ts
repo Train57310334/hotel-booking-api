@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post, Put, UseGuards, Request, BadRequestExcepti
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { SettingsService } from './settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RedisService } from '../../common/redis/redis.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -14,6 +15,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 export class SettingsController {
   constructor(
     private svc: SettingsService,
+    private redis: RedisService,
     @Inject(forwardRef(() => NotificationsService))
     private notifications: NotificationsService,
   ) {}
@@ -26,6 +28,22 @@ export class SettingsController {
   @Put()
   update(@Body() body: Record<string, string>) {
     return this.svc.updateBatch(body);
+  }
+
+  @Get('redis-status')
+  async redisStatus() {
+    const connected = this.redis.available;
+    const configuredUrl = process.env.REDIS_URL || (await this.svc.get('redisUrl')) || '';
+    const maskedUrl = configuredUrl
+      ? configuredUrl.replace(/:[^:@]+@/, ':****@') // Hide password in redis://user:pass@host
+      : '';
+    return {
+      connected,
+      configuredUrl: maskedUrl,
+      note: connected
+        ? 'Redis is connected and operational.'
+        : 'Redis is not connected. JWT user cache is using in-memory fallback (single-instance only).',
+    };
   }
 
   @Post('test-email')

@@ -237,9 +237,9 @@ export class BookingsController {
    */
   @UseGuards(JwtAuthGuard)
   @Get('my-bookings/list') // Renamed to avoid collision or clarify
-  async getMyBookings(@Req() req) {
+  async getMyBookings(@Req() req, @Query('page') page: number = 1) {
     const userId = req.user.userId;
-    return this.svc.getMyBookings(userId);
+    return this.svc.getMyBookings(userId, Number(page) || 1);
   }
 
   /**

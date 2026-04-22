@@ -5,7 +5,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { PrismaService } from '@/common/prisma/prisma.service';
 import { JwtStrategy } from './jwt.strategy';
-import { RolesGuard } from '@/modules/roles/roles.guard';
+import { RolesGuard } from './guards/roles.guard';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
@@ -19,6 +19,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
   ],
   controllers: [AuthController],
   providers: [AuthService, PrismaService, JwtStrategy, RolesGuard],
-  exports: [AuthService, JwtStrategy, JwtModule],
+  exports: [AuthService, JwtStrategy, JwtModule, RolesGuard],
 })
 export class AuthModule {}

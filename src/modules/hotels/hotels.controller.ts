@@ -4,7 +4,6 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ApiTags } from '@nestjs/swagger';
 import { HotelsService } from './hotels.service';
-
 import { PaymentsService } from '../payments/payments.service';
 
 @ApiTags('hotels')
@@ -12,7 +11,7 @@ import { PaymentsService } from '../payments/payments.service';
 export class HotelsController {
   constructor(
     private hotels: HotelsService,
-    private paymentsService: PaymentsService 
+    private paymentsService: PaymentsService,
   ) {}
 
   @Post(':id/upgrade')
@@ -40,6 +39,8 @@ export class HotelsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('platform_admin')
   suspendHotel(@Param('id') id: string, @Body('isSuspended') isSuspended: boolean) {
+    // The 60s TTL cache in RolesGuard will expire naturally.
+    // A suspended hotel will be enforced within at most 60 seconds.
     return this.hotels.suspendHotel(id, isSuspended);
   }
 

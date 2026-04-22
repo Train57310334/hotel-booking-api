@@ -2,14 +2,18 @@ import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { RedisService } from '../../common/redis/redis.service';
 
-// ─── In-Memory User Profile Cache ────────────────────────────────────────────
-// Caches DB lookup results from JWT validation to reduce DB load.
-// Each cache entry lives for USER_CACHE_TTL_MS (5 minutes).
-// Cache is invalidated automatically on expiry — no manual bust needed for
-// role changes since JWTs themselves expire (typically 1h), and the 5-min
-// window is an acceptable security tradeoff for a hotel management system.
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Cache Configuration ──────────────────────────────────────────────────────
+const USER_CACHE_TTL_S = 5 * 60; // 5 minutes (Redis uses seconds)
+const USER_CACHE_TTL_MS = USER_CACHE_TTL_S * 1000;
+const REDIS_KEY_PREFIX = 'jwt:user:';
+
+// ─── In-Memory Fallback (single-process, used when Redis is unavailable) ──────
+// In a multi-instance deployment, each instance has its own cache — which means
+// role changes may not propagate instantly across instances. The TTL (5 min) is
+// an acceptable security tradeoff for a hotel management system.
+// When Redis IS available, all instances share the same cache automatically.
 interface CachedUser {
   userId: string;
   email: string;
@@ -17,24 +21,27 @@ interface CachedUser {
   hotelId: string | null;
   isImpersonating: boolean;
   roleAssignments: any[];
-  expiresAt: number; // epoch ms
+  expiresAt: number; // epoch ms — only used for in-memory fallback
 }
 
-const userCache = new Map<string, CachedUser>();
-const USER_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const memoryCache = new Map<string, CachedUser>();
 
 /**
- * Force-invalidate a specific user's cache entry.
- * Call this whenever a user's roles or hotel assignments change
- * (e.g. staff add/remove, suspension, role update, impersonation).
+ * Force-invalidate a specific user's cache entry from the in-memory fallback.
+ * Call this from business logic that changes roles/assignments.
+ * Note: Redis entries use TTL and are invalidated by RedisService.del() instead.
  */
 export function invalidateUserCache(userId: string): void {
-  userCache.delete(userId);
+  memoryCache.delete(userId);
+  memoryCache.delete(`${userId}-imp-*`); // best-effort; impersonation keys
 }
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(private prisma: PrismaService) {
+  constructor(
+    private prisma: PrismaService,
+    private redis: RedisService,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -46,52 +53,53 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const userId: string = payload.sub;
     const isImpersonating: boolean = !!payload.isImpersonating;
     const impersonatedHotelId: string | null = payload.hotelId;
+    const cacheKey = isImpersonating ? `${userId}-imp-${impersonatedHotelId}` : userId;
     const now = Date.now();
 
-    // ── 1. Cache Hit ──────────────────────────────────────────────────────────
-    const cacheKey = isImpersonating ? `${userId}-imp-${impersonatedHotelId}` : userId;
-    const cached = userCache.get(cacheKey);
-    if (cached && now < cached.expiresAt) {
-      return {
-        userId: cached.userId,
-        email: cached.email,
-        roles: cached.roles,
-        hotelId: cached.hotelId,
-        isImpersonating: cached.isImpersonating,
-        roleAssignments: cached.roleAssignments,
-      };
+    // ── 1. Try Redis Cache (distributed, survives restarts & multi-instance) ──
+    const redisKey = `${REDIS_KEY_PREFIX}${cacheKey}`;
+    const redisHit = await this.redis.get(redisKey);
+    if (redisHit) {
+      try {
+        const cached = JSON.parse(redisHit) as CachedUser;
+        return this.toUserPayload(cached);
+      } catch {
+        // Corrupted cache entry — fall through to DB
+        await this.redis.del(redisKey);
+      }
     }
 
-    // ── 2. Cache Miss → DB Query ──────────────────────────────────────────────
+    // ── 2. Try In-Memory Fallback Cache (when Redis unavailable) ──────────────
+    if (!this.redis.available) {
+      const memHit = memoryCache.get(cacheKey);
+      if (memHit && now < memHit.expiresAt) {
+        return this.toUserPayload(memHit);
+      }
+    }
+
+    // ── 3. Cache Miss → DB Query ──────────────────────────────────────────────
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { roleAssignments: true },
     });
 
-    // User was deleted — remove stale cache and reject
     if (!user) {
-      userCache.delete(userId);
+      // User deleted — evict stale cache everywhere
+      await this.redis.del(redisKey);
+      memoryCache.delete(cacheKey);
       return null;
     }
 
-    // Platform Admins logging in normally should NOT have a hotel context
-    // (only during explicit impersonation sessions)
     const isPlatformAdmin = user.roles?.includes('platform_admin');
-
     const hotelId = isImpersonating
       ? impersonatedHotelId
-      : (isPlatformAdmin
-          ? null  // Super Admin: no hotel context unless actively impersonating
-          : (user.roleAssignments && user.roleAssignments.length > 0
-              ? user.roleAssignments[0].hotelId
-              : null));
+      : isPlatformAdmin
+        ? null
+        : user.roleAssignments?.[0]?.hotelId ?? null;
 
-    let roles = user.roles;
-    if (isImpersonating) {
-       // Keep platform_admin so their identity remains Super Admin, but give them access to the hotel
-       if (!roles.includes('owner')) {
-           roles.push('owner');
-       }
+    let roles = [...user.roles];
+    if (isImpersonating && !roles.includes('owner')) {
+      roles.push('owner');
     }
 
     const freshUser: CachedUser = {
@@ -104,16 +112,38 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       expiresAt: now + USER_CACHE_TTL_MS,
     };
 
-    // ── 3. Store in cache ─────────────────────────────────────────────────────
-    userCache.set(cacheKey, freshUser);
+    // ── 4. Store in Redis (preferred) or in-memory fallback ───────────────────
+    if (this.redis.available) {
+      await this.redis.set(redisKey, JSON.stringify(freshUser), USER_CACHE_TTL_S);
+    } else {
+      memoryCache.set(cacheKey, freshUser);
+    }
 
+    return this.toUserPayload(freshUser);
+  }
+
+  private toUserPayload(user: CachedUser) {
     return {
-      userId: freshUser.userId,
-      email: freshUser.email,
-      roles: freshUser.roles,
-      hotelId: freshUser.hotelId,
-      isImpersonating: freshUser.isImpersonating,
-      roleAssignments: freshUser.roleAssignments,
+      userId: user.userId,
+      email: user.email,
+      roles: user.roles,
+      hotelId: user.hotelId,
+      isImpersonating: user.isImpersonating,
+      roleAssignments: user.roleAssignments,
     };
+  }
+
+  /**
+   * Invalidate a user's cache in both Redis and local memory.
+   * Use this when user roles or hotel assignments change.
+   */
+  async invalidate(userId: string, impersonatedHotelId?: string): Promise<void> {
+    const keys = [
+      `${REDIS_KEY_PREFIX}${userId}`,
+      ...(impersonatedHotelId ? [`${REDIS_KEY_PREFIX}${userId}-imp-${impersonatedHotelId}`] : []),
+    ];
+    await this.redis.del(...keys);
+    memoryCache.delete(userId);
+    if (impersonatedHotelId) memoryCache.delete(`${userId}-imp-${impersonatedHotelId}`);
   }
 }

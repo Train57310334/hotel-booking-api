@@ -6,6 +6,7 @@ import { InventoryService } from '@/modules/inventory/inventory.service';
 import { EventsGateway } from '@/modules/events/events.gateway';
 import { ReviewsService } from '@/modules/reviews/reviews.service';
 import { ActivityLogsService } from '@/modules/activity-logs/activity-logs.service';
+import { SettingsService } from '@/modules/settings/settings.service';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
@@ -29,6 +30,7 @@ export class BookingsService {
     private eventsGateway: EventsGateway,
     private reviewsService: ReviewsService,
     private activityLogsService: ActivityLogsService,
+    private settingsService: SettingsService,
   ) {}
 
   // ─── BOOKING DRAFT STORE (Database backed, 15-min TTL) ─────────────────────────
@@ -62,6 +64,26 @@ export class BookingsService {
           expiresAt: { lt: new Date() }
        }
     });
+  }
+
+  @Cron('0 */15 * * * *') // Every 15 minutes
+  async cleanExpiredPendingBookings() {
+    const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000);
+    const expiredBookings = await this.prisma.booking.findMany({
+      where: {
+        status: 'pending',
+        createdAt: { lt: thirtyMinsAgo }
+      }
+    });
+
+    for (const booking of expiredBookings) {
+      try {
+        await this.cancelBooking(booking.id);
+        // cancelBooking already handles inventory restore and notifications
+      } catch (e) {
+        console.error(`Failed to auto-cancel booking ${booking.id}:`, e);
+      }
+    }
   }
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -212,8 +234,15 @@ export class BookingsService {
   }
 
   async checkoutBooking(draftId: string, payload: any) {
-    // 1. In a robust system, draftId would be checked against a Redis/Memory store
-    // 2. Here, we'll assume the draftId corresponds directly to a 'pending' booking ID for simplicity.
+    // ⚠️  MOCK PAYMENT ONLY — This endpoint exists for local/dev testing.
+    //     Toggle via Super Admin → CMS → Security → "Enable Mock Payment".
+    //     Or set ALLOW_MOCK_PAYMENT=true in .env for local development.
+    //     Always disabled in production unless explicitly enabled in DB.
+    const mockEnabled = await this.settingsService.isMockPaymentEnabled();
+    if (!mockEnabled) {
+      throw new BadRequestException('Mock payment checkout is disabled. Please integrate a real payment gateway (Stripe, Omise, 2c2p).');
+    }
+
     const booking = await this.prisma.booking.findUnique({
       where: { id: draftId }
     });
@@ -226,38 +255,46 @@ export class BookingsService {
       throw new BadRequestException('This booking has already been processed.');
     }
 
-    // 3. Process Mock Payment (Simulating 2 seconds delay)
-    // In real life: const intent = await stripe.paymentIntents.create({...})
+    // Simulate payment processing delay (mock only)
     await new Promise(resolve => setTimeout(resolve, 1500));
 
-    const isSuccess = payload.cardNumber && payload.cardNumber.length >= 15; // Extremely basic validation
+    const isSuccess = payload.cardNumber && payload.cardNumber.length >= 15;
     if (!isSuccess) {
       throw new BadRequestException('Payment declined. Please check your card details.');
     }
 
-    // 4. Update Booking Status and Create Payment Record
     const updatedBooking = await this.prisma.$transaction(async (tx) => {
         const confirmedBooking = await tx.booking.update({
             where: { id: draftId },
             data: { status: 'confirmed' }
         });
 
-        await tx.payment.create({
-            data: {
-                bookingId: confirmedBooking.id,
-                amount: confirmedBooking.totalAmount,
-                method: 'Credit Card',
-                provider: 'System (Mock)',
-                status: 'captured',
-                currency: 'THB',
-                chargeId: `ch_mock_${Date.now()}`
-            }
-        });
+        // ✅ BUG FIX: Check for existing payment record before creating a new one.
+        // `createPublicBooking` may have already created a pending payment record.
+        const existingPayment = await tx.payment.findFirst({ where: { bookingId: draftId } });
+        if (!existingPayment) {
+            await tx.payment.create({
+                data: {
+                    bookingId: confirmedBooking.id,
+                    amount: confirmedBooking.totalAmount,
+                    method: 'Credit Card',
+                    provider: 'System (Mock)',
+                    status: 'captured',
+                    currency: 'THB',
+                    chargeId: `ch_mock_${Date.now()}`
+                }
+            });
+        } else {
+            // Update the existing payment record to captured
+            await tx.payment.update({
+                where: { id: existingPayment.id },
+                data: { status: 'captured', chargeId: `ch_mock_${Date.now()}` }
+            });
+        }
 
         return confirmedBooking;
     });
 
-    // 5. Send Success Notification (Optional)
     try {
         await this.notificationsService.sendBookingReceivedEmail(updatedBooking);
     } catch (e) {
@@ -296,7 +333,7 @@ export class BookingsService {
               d.setDate(d.getDate() + 1);
            }
 
-           const totalRooms = await tx.room.count({ where: { roomTypeId: roomOpt.roomTypeId, deletedAt: null } });
+           const totalRooms = await tx.room.count({ where: { roomTypeId: roomOpt.roomTypeId, deletedAt: null, status: { not: 'OOO' } } });
            for (const date of dateRange) {
               const inv = await tx.inventoryCalendar.findFirst({
                  where: { roomTypeId: roomOpt.roomTypeId, date }
@@ -451,12 +488,15 @@ export class BookingsService {
                });
                
                if (inv) {
-                   await tx.inventoryCalendar.update({
+                   const updatedInv = await tx.inventoryCalendar.update({
                       where: { id: inv.id },
                       data: { allotment: { decrement: roomOpt.quantity } }
                    });
+                   if (updatedInv.allotment < 0) {
+                       throw new ConflictException(`Inventory exhausted mid-transaction for Room Type ${roomOpt.roomTypeId}`);
+                   }
                } else {
-                   const totalRooms = await tx.room.count({ where: { roomTypeId: roomOpt.roomTypeId, deletedAt: null } });
+                   const totalRooms = await tx.room.count({ where: { roomTypeId: roomOpt.roomTypeId, deletedAt: null, status: { not: 'OOO' } } });
                    if (totalRooms < roomOpt.quantity) {
                        throw new ConflictException(`Insufficient physical rooms for Room Type ${roomOpt.roomTypeId}`);
                    }
@@ -485,9 +525,11 @@ export class BookingsService {
 
   /** 👤 การจองของลูกค้า */
   // ✅ BUG #5 FIX: Include "active" stay (checkIn passed but checkOut not yet)
-  async getMyBookings(userId: string) {
+  async getMyBookings(userId: string, page: number = 1) {
     if (!userId) throw new NotFoundException('User ID is required');
     const now = new Date();
+    const LIMIT = 50;
+    const skip = (Math.max(1, page) - 1) * LIMIT;
 
     const [upcoming, active, past] = await Promise.all([
       // Future bookings (check-in is in the future)
@@ -495,21 +537,26 @@ export class BookingsService {
         where: { userId, checkIn: { gte: now } },
         include: { hotel: true, roomType: true, ratePlan: true, payment: true },
         orderBy: { checkIn: 'asc' },
+        skip,
+        take: LIMIT,
       }),
       // Active stays (checked-in but not yet checked out)
       this.prisma.booking.findMany({
         where: { userId, checkIn: { lt: now }, checkOut: { gte: now } },
         include: { hotel: true, roomType: true, ratePlan: true, payment: true },
         orderBy: { checkIn: 'asc' },
+        take: LIMIT, // Active stays are typically few
       }),
-      // Past bookings (already checked out)
+      // Past bookings (already checked out) — most recent first, paginated
       this.prisma.booking.findMany({
         where: { userId, checkOut: { lt: now } },
         include: { hotel: true, roomType: true, ratePlan: true, payment: true },
         orderBy: { checkOut: 'desc' },
+        skip,
+        take: LIMIT,
       }),
     ]);
-    return { upcoming, active, past };
+    return { upcoming, active, past, page, limit: LIMIT };
   }
 
   /** 💳 ยืนยันการชำระเงิน */
@@ -599,17 +646,25 @@ export class BookingsService {
 
   // ─── GUEST PORTAL ──────────────────────────────────────────────────────────
 
-  async findMyBookings(userId: string) {
+  async findMyBookings(userId: string, page: number = 1) {
     if (!userId) throw new BadRequestException('User ID is required');
-    return this.prisma.booking.findMany({
-      where: { userId },
-      include: {
-        hotel: { select: { name: true, address: true, images: true, contactPhone: true } },
-        roomType: { select: { name: true, images: true } },
-        room: { select: { roomNumber: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const LIMIT = 50;
+    const skip = (Math.max(1, page) - 1) * LIMIT;
+    const [data, total] = await Promise.all([
+      this.prisma.booking.findMany({
+        where: { userId },
+        include: {
+          hotel: { select: { name: true, address: true, images: true, contactPhone: true } },
+          roomType: { select: { name: true, images: true } },
+          room: { select: { roomNumber: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: LIMIT,
+      }),
+      this.prisma.booking.count({ where: { userId } }),
+    ]);
+    return { data, total, page, limit: LIMIT };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -772,19 +827,24 @@ export class BookingsService {
       select: { checkIn: true, checkOut: true }
     });
 
-    // Simple daily count
+    // Aggregate daily booking count efficiently using a Map instead of per-day JS filter
     const daysInMonth = endDate.getDate();
     const result = [];
     
+    // Build a Set of occupied date strings from booking ranges
+    const occupancyMap = new Map<number, number>(); // day -> count
+    bookings.forEach(b => {
+      let d = new Date(Math.max(new Date(b.checkIn).getTime(), startDate.getTime()));
+      const bEnd = new Date(Math.min(new Date(b.checkOut).getTime(), endDate.getTime()));
+      while (d < bEnd) {
+        const day = d.getDate();
+        occupancyMap.set(day, (occupancyMap.get(day) || 0) + 1);
+        d.setDate(d.getDate() + 1);
+      }
+    });
+
     for (let d = 1; d <= daysInMonth; d++) {
-        const currentDate = new Date(year, month - 1, d);
-        let count = 0;
-        bookings.forEach(b => {
-             if (currentDate >= new Date(b.checkIn) && currentDate < new Date(b.checkOut)) {
-                 count++;
-             }
-        });
-        result.push({ day: d, count });
+      result.push({ day: d, count: occupancyMap.get(d) || 0 });
     }
     return result;
   }

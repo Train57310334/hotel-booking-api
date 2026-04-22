@@ -8,9 +8,10 @@ import { ReviewsModule } from '@/modules/reviews/reviews.module';
 import { JwtModule } from '@nestjs/jwt';
 import { EventsModule } from '@/modules/events/events.module';
 import { ActivityLogsModule } from '@/modules/activity-logs/activity-logs.module';
+import { SettingsModule } from '@/modules/settings/settings.module';
 
 @Module({
-  imports: [NotificationsModule, InventoryModule, JwtModule, EventsModule, ReviewsModule, ActivityLogsModule],
+  imports: [NotificationsModule, InventoryModule, JwtModule, EventsModule, ReviewsModule, ActivityLogsModule, SettingsModule],
   controllers: [BookingsController],
   providers: [BookingsService, PrismaService],
   exports: [BookingsService],

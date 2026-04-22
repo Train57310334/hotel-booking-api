@@ -6,16 +6,13 @@ export class SettingsService {
   constructor(private prisma: PrismaService) {}
 
   async findAll() {
-    // Return key-value map or list
     const settings = await (this.prisma as any).systemSetting.findMany();
     
-    // 1. Convert DB Settings to Map
     const dbSettings = settings.reduce((acc, curr) => {
       acc[curr.key] = curr.value;
       return acc;
     }, {});
 
-    // 2. Merge with Env Defaults (DB overrides Env)
     return {
         // General
         siteName: dbSettings['siteName'] || process.env.APP_NAME || 'BookingKub',
@@ -48,8 +45,18 @@ export class SettingsService {
         seoDefaultOgImage: dbSettings['seoDefaultOgImage'] || '',
         seoDefaultDescription: dbSettings['seoDefaultDescription'] || '',
         seoRobotsCustom: dbSettings['seoRobotsCustom'] || '',
+
+        // ─── Platform Security (DB-managed, UI-configurable) ──────────────────
+        // DB value takes precedence over environment variables.
+        // This allows Super Admins to update security config via UI without SSH.
+        allowedOrigins: dbSettings['allowedOrigins'] || process.env.ALLOWED_ORIGINS || 'http://localhost:3000',
+        mockPaymentEnabled: dbSettings['mockPaymentEnabled'] ?? process.env.ALLOW_MOCK_PAYMENT ?? 'false',
+
+        // ─── Infrastructure (DB-managed) ──────────────────────────────────────
+        redisUrl: dbSettings['redisUrl'] || process.env.REDIS_URL || '',
+        redisCacheTtl: dbSettings['redisCacheTtl'] || '300', // seconds, default 5 minutes
         
-        // Spread rest
+        // Spread rest (catch-all for any other custom settings)
         ...dbSettings
     };
   }
@@ -57,12 +64,11 @@ export class SettingsService {
   async getPublicSettings() {
     const settings = await this.findAll();
     return {
-      stripePublicKey: settings['stripeKey'] || process.env.STRIPE_PUBLIC_KEY || process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || 'pk_test_51P',
+      stripePublicKey: settings['stripeKey'] || process.env.STRIPE_PUBLIC_KEY || process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '',
       omisePublicKey: settings['omisePublicKey'] || process.env.OMISE_PUBLIC_KEY || process.env.NEXT_PUBLIC_OMISE_PUBLIC_KEY || '',
       siteName: settings['siteName'] || 'BookingKub',
       logoUrl: settings['logoUrl'] || '',
       authBgUrl: settings['authBgUrl'] || '',
-      // SaaS Landing Content
       landingHeroTitle: settings['landingHeroTitle'] || '',
       landingHeroDescription: settings['landingHeroDescription'] || '',
       landingCTA: settings['landingCTA'] || '',
@@ -70,7 +76,6 @@ export class SettingsService {
       landingFeaturesSubtitle: settings['landingFeaturesSubtitle'] || '',
       landingPricingTitle: settings['landingPricingTitle'] || '',
       landingPricingSubtitle: settings['landingPricingSubtitle'] || '',
-      // SEO & Marketing (Public platform-wide keys — safe to expose)
       seoGoogleVerification: settings['seoGoogleVerification'] || '',
       seoBingVerification: settings['seoBingVerification'] || '',
       seoPlatformGaId: settings['seoPlatformGaId'] || '',
@@ -107,7 +112,6 @@ export class SettingsService {
       'landingFeaturesSubtitle': 'general',
       'landingPricingTitle': 'general',
       'landingPricingSubtitle': 'general',
-      // SEO & Marketing
       'seoGoogleVerification': 'seo',
       'seoBingVerification': 'seo',
       'seoPlatformGaId': 'seo',
@@ -116,46 +120,79 @@ export class SettingsService {
       'seoPlatformGadsId': 'seo',
       'seoDefaultOgImage': 'seo',
       'seoDefaultDescription': 'seo',
-      'seoRobotsCustom': 'seo'
+      'seoRobotsCustom': 'seo',
+      // Platform Security — UI-settable keys
+      'allowedOrigins': 'security',
+      'mockPaymentEnabled': 'security',
+      // Infrastructure — UI-settable keys
+      'redisUrl': 'infrastructure',
+      'redisCacheTtl': 'infrastructure',
     };
 
     const promises = Object.entries(settings).map(([key, value]) => {
       return (this.prisma as any).systemSetting.upsert({
         where: { key },
         update: { value },
-        create: { 
-          key, 
-          value, 
-          category: categories[key] || 'general' 
-        }
+        create: { key, value, category: categories[key] || 'general' }
       });
     });
 
     await Promise.all(promises);
     return this.findAll();
   }
+
   async get(key: string, envFallback?: string): Promise<string> {
-    const setting = await (this.prisma as any).systemSetting.findUnique({
-      where: { key }
-    });
+    const setting = await (this.prisma as any).systemSetting.findUnique({ where: { key } });
     const value = setting?.value;
     if (value && value.trim() !== '') return value;
     return envFallback && process.env[envFallback] ? process.env[envFallback] : '';
   }
 
+  // ─── Platform Security Helpers ─────────────────────────────────────────────
+
+  /**
+   * Returns parsed list of allowed CORS origins.
+   * Reads from DB first; env var ALLOWED_ORIGINS is the fallback.
+   * Called at bootstrap in main.ts.
+   */
+  async getCorsOrigins(): Promise<string[]> {
+    const raw = await this.get('allowedOrigins', 'ALLOWED_ORIGINS');
+    return (raw || 'http://localhost:3000')
+      .split(',')
+      .map(o => o.trim())
+      .filter(Boolean);
+  }
+
+  /**
+   * Returns true if mock payment checkout is enabled.
+   * DB value wins over env. Always false in production unless explicitly 'true' in DB.
+   */
+  async isMockPaymentEnabled(): Promise<boolean> {
+    const value = await this.get('mockPaymentEnabled', 'ALLOW_MOCK_PAYMENT');
+    if (process.env.NODE_ENV === 'production' && value !== 'true') return false;
+    return value === 'true';
+  }
+
+  // ─── Payment Gateway Configs ───────────────────────────────────────────────
+
   async getStripeConfig() {
     const secretKey = await this.get('stripeSecret', 'STRIPE_SECRET_KEY');
-    if (!secretKey) throw new Error('Stripe Secret Key is missing in both Settings and Environment Variables.');
+    if (!secretKey) throw new Error('Stripe Secret Key is missing in Settings and Environment Variables.');
     return { secretKey };
   }
 
   async getOmiseConfig() {
     const publicKey = await this.get('omisePublicKey', 'NEXT_PUBLIC_OMISE_PUBLIC_KEY');
     const secretKey = await this.get('omiseSecretKey', 'OMISE_SECRET_KEY');
-
-    if (!publicKey || !secretKey) {
-       throw new Error('Omise keys are missing in both Settings and Environment Variables.');
-    }
+    if (!publicKey || !secretKey) throw new Error('Omise keys are missing in Settings and Environment Variables.');
     return { publicKey, secretKey };
+  }
+  async getRedisConfig(): Promise<{ url: string; cacheTtlSeconds: number }> {
+    const url = await this.get('redisUrl', 'REDIS_URL');
+    const ttl = await this.get('redisCacheTtl');
+    return {
+      url: url || '',
+      cacheTtlSeconds: ttl ? parseInt(ttl, 10) : 300,
+    };
   }
 }

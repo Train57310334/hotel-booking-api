@@ -44,6 +44,7 @@
     "date-fns": "^4.1.0",
     "dotenv-cli": "^11.0.0",
     "ical-generator": "^10.0.0",
+    "ioredis": "^5.10.1",
     "json2csv": "^6.0.0-alpha.2",
     "node-fetch": "^3.3.2",
     "node-ical": "^0.25.4",

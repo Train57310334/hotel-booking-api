@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaService } from '@/common/prisma/prisma.service';
 import { PrismaModule } from '@/common/prisma/prisma.module';
+import { RedisModule } from '@/common/redis/redis.module';
 
 import { AuthModule } from '@/modules/auth/auth.module';
 import { RolesModule } from '@/modules/roles/roles.module';
@@ -47,6 +48,7 @@ import { ActivityLogsModule } from './modules/activity-logs/activity-logs.module
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     PrismaModule,
+    RedisModule,  // ← Global: RedisService injectable everywhere
     AuthModule,
     UsersModule,
     HotelsModule,

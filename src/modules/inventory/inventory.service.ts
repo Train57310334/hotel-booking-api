@@ -93,7 +93,7 @@ export class InventoryService {
     const prisma = tx || this.prisma;
     // 1. Get total physical rooms count to use as default base if inventory doesn't exist
     const totalRooms = await prisma.room.count({
-      where: { roomTypeId, deletedAt: null }
+      where: { roomTypeId, deletedAt: null, status: { not: 'OOO' } }
     });
 
     for (const date of dateRange) {
@@ -102,25 +102,34 @@ export class InventoryService {
       });
 
       if (record) {
-        if (record.allotment <= 0) {
-           throw new NotFoundException(`No inventory available for ${date.toDateString()}`);
+        // ✅ Atomic decrement: WHERE allotment > 0 prevents over-booking even under race conditions.
+        // If two concurrent requests both read allotment=1, only ONE will win this update.
+        const updated = await prisma.$executeRaw`
+          UPDATE "InventoryCalendar"
+          SET allotment = allotment - 1, "updatedAt" = NOW()
+          WHERE id = ${record.id} AND allotment > 0
+        `;
+        if (updated === 0) {
+          // Another request consumed the last room between our read and this update
+          throw new NotFoundException(`No inventory available for ${date.toDateString()} (concurrent booking conflict)`);
         }
-        await prisma.inventoryCalendar.update({
-          where: { roomTypeId_date: { roomTypeId, date } },
-          data: { allotment: { decrement: 1 } },
-        });
       } else {
         // Record doesn't exist, assume full availability (totalRooms) minus 1
         if (totalRooms <= 0) {
            throw new NotFoundException(`No physical rooms found for this Room Type, and no inventory set.`);
         }
-        await prisma.inventoryCalendar.create({
-          data: {
+        // Use upsert to handle concurrent inserts gracefully
+        await prisma.inventoryCalendar.upsert({
+          where: { roomTypeId_date: { roomTypeId, date } },
+          create: {
             roomTypeId,
             date,
-            allotment: totalRooms - 1, // Default was totalRooms, now reducing by 1
+            allotment: totalRooms - 1,
             stopSale: false,
             minStay: 1
+          },
+          update: {
+            allotment: { decrement: 1 }
           }
         });
       }
@@ -131,7 +140,7 @@ export class InventoryService {
   async restoreInventory(roomTypeId: string, dateRange: Date[], tx?: any) {
     const prisma = tx || this.prisma;
     const totalRooms = await prisma.room.count({
-      where: { roomTypeId, deletedAt: null }
+      where: { roomTypeId, deletedAt: null, status: { not: 'OOO' } }
     });
 
     for (const date of dateRange) {
@@ -173,7 +182,7 @@ export class InventoryService {
 
     // 2. Get fallback limit (physical room count)
     const totalRooms = await this.prisma.room.count({
-      where: { roomTypeId, deletedAt: null }
+      where: { roomTypeId, deletedAt: null, status: { not: 'OOO' } }
     });
 
     // 3. Check every single date

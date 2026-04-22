@@ -3,15 +3,16 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
-import { invalidateUserCache } from './jwt.strategy';
 import { NotificationsService } from '../notifications/notifications.service';
+import { JwtStrategy } from './jwt.strategy';
 
 @Injectable()
 export class AuthService {
   constructor(
     private prisma: PrismaService, 
     private jwtService: JwtService,
-    private notificationsService: NotificationsService
+    private notificationsService: NotificationsService,
+    private jwtStrategy: JwtStrategy,
   ) {}
 
   // ✅ Register
@@ -168,8 +169,8 @@ export class AuthService {
     // Generate a token AS IF they just logged in, but bound to this hotel
     const token = this.generateToken(adminUser, targetHotelId);
 
-    // Clear any stale JWT cache for this user so fresh permissions are loaded
-    invalidateUserCache(adminUser.id);
+    // Clear stale JWT cache (both Redis and in-memory) so fresh permissions load immediately
+    await this.jwtStrategy.invalidate(adminUser.id, targetHotelId);
 
     return { user: adminUser, token, isImpersonating: true };
   }

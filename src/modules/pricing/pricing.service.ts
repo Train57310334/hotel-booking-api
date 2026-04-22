@@ -29,7 +29,12 @@ export class PricingService {
     }
 
     const roomType = await this.prisma.roomType.findFirst({
-      where: { id: roomTypeId, hotelId }
+      where: { id: roomTypeId, hotelId },
+      include: {
+        hotel: {
+          select: { taxIncluded: true, taxRate: true, serviceChargeRate: true }
+        }
+      }
     });
 
     if (!roomType) {
@@ -65,6 +70,42 @@ export class PricingService {
       overrideMap.set(dateKey, ov.baseRate);
     });
 
+    // --- Yield Management Setup ---
+    const yieldRules = await this.prisma.yieldRule.findMany({
+      where: { hotelId, isActive: true }
+    });
+
+    let totalRooms = 0;
+    // Pre-computed per-date occupancy map: dateKey -> bookedCount
+    // Built once before the pricing loop to avoid O(bookings × nights) repeated .filter() calls.
+    const occupancyByDate = new Map<string, number>();
+    const hasOccupancyRules = yieldRules.some(r => r.triggerType === 'OCCUPANCY');
+
+    if (hasOccupancyRules) {
+        totalRooms = await this.prisma.room.count({ where: { roomTypeId, deletedAt: null, status: { not: 'OOO' } } });
+        const overlappingBookings = await this.prisma.booking.findMany({
+            where: {
+                roomTypeId,
+                status: { notIn: ['cancelled', 'no_show'] },
+                checkIn: { lt: end },
+                checkOut: { gt: start }
+            },
+            select: { checkIn: true, checkOut: true }
+        });
+
+        // Build occupancy map by iterating each booking's date range once — O(bookings × avg_stay)
+        for (const b of overlappingBookings) {
+            let d = new Date(Math.max(new Date(b.checkIn).getTime(), start.getTime()));
+            const bEnd = new Date(Math.min(new Date(b.checkOut).getTime(), end.getTime()));
+            while (d < bEnd) {
+                const key = d.toISOString().split('T')[0];
+                occupancyByDate.set(key, (occupancyByDate.get(key) || 0) + 1);
+                d.setDate(d.getDate() + 1);
+            }
+        }
+    }
+    // ------------------------------
+
     let subtotal = 0;
     const nights = [];
     const basePrice = roomType.basePrice || 1000;
@@ -82,8 +123,49 @@ export class PricingService {
       // Add Rate Plan specifics (e.g. breakfast)
       dailyRate += breakfastAddon;
 
-      // Yield Logic Placeholder (Phase 10)
-      // TODO: Fetch YieldRules and determine occupancy to adjust dailyRate.
+      // --- Yield Management Logic ---
+      let dailyOccupancy = 0;
+      if (hasOccupancyRules && totalRooms > 0) {
+          // O(1) lookup — map was pre-built before this loop
+          dailyOccupancy = ((occupancyByDate.get(dateKey) || 0) / totalRooms) * 100;
+      }
+      
+      // Calculate start of today for precise day diff
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const targetDate = new Date(currentDate);
+      targetDate.setHours(0, 0, 0, 0);
+      const daysToArrival = Math.floor((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+      let yieldMultiplier = 1;
+      let yieldFixedAdjustment = 0;
+
+      for (const rule of yieldRules) {
+         let triggerMatched = false;
+         
+         if (rule.triggerType === 'OCCUPANCY') {
+             if (rule.conditionOp === 'GREATER_THAN' && dailyOccupancy > rule.conditionValue) triggerMatched = true;
+             if (rule.conditionOp === 'LESS_THAN' && dailyOccupancy < rule.conditionValue) triggerMatched = true;
+         } else if (rule.triggerType === 'DAYS_TO_ARRIVAL') {
+             if (rule.conditionOp === 'GREATER_THAN' && daysToArrival > rule.conditionValue) triggerMatched = true;
+             if (rule.conditionOp === 'LESS_THAN' && daysToArrival < rule.conditionValue) triggerMatched = true;
+         }
+
+         if (triggerMatched) {
+             if (rule.adjustmentType === 'PERCENTAGE') {
+                 if (rule.adjustmentOp === 'INCREASE') yieldMultiplier += (rule.adjustmentValue / 100);
+                 if (rule.adjustmentOp === 'DECREASE') yieldMultiplier -= (rule.adjustmentValue / 100);
+             } else if (rule.adjustmentType === 'FIXED') {
+                 if (rule.adjustmentOp === 'INCREASE') yieldFixedAdjustment += rule.adjustmentValue;
+                 if (rule.adjustmentOp === 'DECREASE') yieldFixedAdjustment -= rule.adjustmentValue;
+             }
+         }
+      }
+
+      if (yieldMultiplier < 0.2) yieldMultiplier = 0.2; // Prevent 100% discount via rules
+      dailyRate = Math.floor(dailyRate * yieldMultiplier) + yieldFixedAdjustment;
+      if (dailyRate < 0) dailyRate = 0;
+      // -------------------------------
 
       subtotal += dailyRate;
       nights.push({
@@ -110,8 +192,23 @@ export class PricingService {
       }
     }
 
-    const taxesAndFees = 0; // Configurable if VAT 7% applies externally based on settings
-    let total = subtotal - discount + taxesAndFees;
+    // Calculate Taxes and Fees
+    const hotelConf = roomType.hotel;
+    const combinedRate = (hotelConf.taxRate + hotelConf.serviceChargeRate) / 100;
+    const postDiscountAmount = Math.max(0, subtotal - discount);
+    
+    let taxesAndFees = 0;
+    let total = postDiscountAmount;
+
+    if (hotelConf.taxIncluded) {
+        // Total does not increase. Compute the hidden taxes to present on invoice line item.
+        taxesAndFees = Math.floor(postDiscountAmount - (postDiscountAmount / (1 + combinedRate)));
+        // total remains postDiscountAmount
+    } else {
+        // Taxes are added on top of the subtotal
+        taxesAndFees = Math.floor(postDiscountAmount * combinedRate);
+        total = postDiscountAmount + taxesAndFees;
+    }
     
     // Safety boundary
     if (total < 0) total = 0;

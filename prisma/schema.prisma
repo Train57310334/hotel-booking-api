@@ -126,6 +126,11 @@ model Hotel {
   omisePublicKey    String?
   omiseSecretKey    String?
 
+  // Taxation & Fees Configurations
+  taxIncluded       Boolean @default(true) // If true, subtotal already includes taxes (Net)
+  taxRate           Float   @default(7.0) // E.g., 7% VAT
+  serviceChargeRate Float   @default(0.0) // E.g., 10% Service Charge
+
   // Subscription
   subscriptionEnd DateTime?
 
