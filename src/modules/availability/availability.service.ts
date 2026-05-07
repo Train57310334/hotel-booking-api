@@ -60,10 +60,29 @@ export class AvailabilityService {
           }
       }
 
-      // Exact intersection formula checking max overlapping bookings on any single day can be complex,
-      // For MVP, if a booking touches any part of the stay, it occupies 1 slot of physical capacity.
-      const bookedCount = activeBookings.filter(b => b.roomTypeId === rt.id).length;
-      const available = Math.max(0, baseAllotment - bookedCount);
+      // Improved Daily-based Availability Logic
+      let minAvailableInPeriod = baseAllotment;
+
+      for (let i = 0; i < diffDays; i++) {
+          const currentDate = new Date(checkIn);
+          currentDate.setDate(currentDate.getDate() + i);
+          const nextDate = new Date(currentDate);
+          nextDate.setDate(nextDate.getDate() + 1);
+
+          // Count bookings overlapping this specific day
+          const bookedOnThisDay = activeBookings.filter(b => 
+            b.roomTypeId === rt.id &&
+            b.checkIn < nextDate && 
+            b.checkOut > currentDate
+          ).length;
+
+          const availableOnThisDay = Math.max(0, baseAllotment - bookedOnThisDay);
+          if (availableOnThisDay < minAvailableInPeriod) {
+            minAvailableInPeriod = availableOnThisDay;
+          }
+      }
+
+      const available = minAvailableInPeriod;
 
       return {
         roomTypeId: rt.id,

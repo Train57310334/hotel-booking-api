@@ -14,12 +14,12 @@ export class ChannelsController {
     return this.channelsService.getChannelStatus(hotelId);
   }
 
-  @Put('roomtype/:id/ical')
-  updateIcalUrl(
+  @Put('roomtype/:id/mapping')
+  updateRoomMapping(
     @Param('id') id: string,
-    @Body('url') url: string,
+    @Body() body: { url?: string; channelManagerRoomId?: string },
   ) {
-    return this.channelsService.updateIcalUrl(id, url || null);
+    return this.channelsService.updateRoomMapping(id, body);
   }
 
   @Post(':hotelId/sync')

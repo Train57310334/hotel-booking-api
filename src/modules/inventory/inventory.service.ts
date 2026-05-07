@@ -1,9 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/common/prisma/prisma.service';
+import { ChannelsService } from '@/modules/channels/channels.service';
 
 @Injectable()
 export class InventoryService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private channelsService: ChannelsService,
+  ) {}
 
   async getInventoryByRoomType(roomTypeId: string, startDate: string, endDate: string) {
     const inventories = await this.prisma.inventoryCalendar.findMany({
@@ -40,10 +44,15 @@ export class InventoryService {
       });
     }
 
-    return this.prisma.inventoryCalendar.update({
+    const result = await this.prisma.inventoryCalendar.update({
       where: { roomTypeId_date: { roomTypeId, date: new Date(date) } },
       data,
     });
+
+    // Push to Channel Manager
+    this.channelsService.pushInventoryUpdate(roomTypeId, [date]).catch(e => console.error(e));
+
+    return result;
   }
 
   async updateBulk(
@@ -86,7 +95,13 @@ export class InventoryService {
        });
     });
 
-    return this.prisma.$transaction(operations);
+    const result = await this.prisma.$transaction(operations);
+
+    // Push to Channel Manager
+    const dateStrs = dates.map(d => d.toISOString().split('T')[0]);
+    this.channelsService.pushInventoryUpdate(roomTypeId, dateStrs).catch(e => console.error(e));
+
+    return result;
   }
 
   async reduceInventory(roomTypeId: string, dateRange: Date[], tx?: any) {

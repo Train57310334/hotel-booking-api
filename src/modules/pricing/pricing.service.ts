@@ -108,7 +108,11 @@ export class PricingService {
 
     let subtotal = 0;
     const nights = [];
-    const basePrice = roomType.basePrice || 1000;
+    
+    if (roomType.basePrice == null || roomType.basePrice < 0) {
+        throw new BadRequestException(`Base price for room type ${roomType.name} is not configured.`);
+    }
+    const basePrice = roomType.basePrice;
 
     let currentDate = new Date(start);
     while (currentDate < end) {

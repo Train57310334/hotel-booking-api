@@ -10,8 +10,10 @@ import { EventsModule } from '@/modules/events/events.module';
 import { ActivityLogsModule } from '@/modules/activity-logs/activity-logs.module';
 import { SettingsModule } from '@/modules/settings/settings.module';
 
+import { ChannelsModule } from '@/modules/channels/channels.module';
+
 @Module({
-  imports: [NotificationsModule, InventoryModule, JwtModule, EventsModule, ReviewsModule, ActivityLogsModule, SettingsModule],
+  imports: [NotificationsModule, InventoryModule, JwtModule, EventsModule, ReviewsModule, ActivityLogsModule, SettingsModule, ChannelsModule],
   controllers: [BookingsController],
   providers: [BookingsService, PrismaService],
   exports: [BookingsService],

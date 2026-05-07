@@ -1,10 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { ChannelsService } from '@/modules/channels/channels.service';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class RatesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private channelsService: ChannelsService,
+  ) {}
 
   // --- Rate Plans ---
 
@@ -53,16 +57,21 @@ export class RatesService {
     });
 
     if (existing) {
-        return this.prisma.rateOverride.update({
+        const result = await this.prisma.rateOverride.update({
             where: { id: existing.id },
             data: {
                 baseRate: data.baseRate,
                 reason: data.reason
             }
         });
+        
+        // Push to Channel Manager
+        this.channelsService.pushRateUpdate(data.roomTypeId, data.ratePlanId, [dateObj.toISOString().split('T')[0]]).catch(e => console.error(e));
+
+        return result;
     }
 
-    return this.prisma.rateOverride.create({
+    const result = await this.prisma.rateOverride.create({
         data: {
             roomTypeId: data.roomTypeId,
             ratePlanId: data.ratePlanId,
@@ -71,6 +80,11 @@ export class RatesService {
             reason: data.reason
         }
     });
+
+    // Push to Channel Manager
+    this.channelsService.pushRateUpdate(data.roomTypeId, data.ratePlanId, [dateObj.toISOString().split('T')[0]]).catch(e => console.error(e));
+
+    return result;
   }
 
   async upsertOverrideBulk(data: {
@@ -114,7 +128,13 @@ export class RatesService {
           });
       });
 
-      return this.prisma.$transaction(operations);
+      const result = await this.prisma.$transaction(operations);
+
+      // Push to Channel Manager
+      const dateStrs = dates.map(d => d.toISOString().split('T')[0]);
+      this.channelsService.pushRateUpdate(data.roomTypeId, data.ratePlanId, dateStrs).catch(e => console.error(e));
+
+      return result;
   }
 
   async getOverrides(roomTypeId: string, startDate: string, endDate: string) {
@@ -188,7 +208,11 @@ export class RatesService {
       while(d < checkOut) {
           const dateKey = d.toISOString().split('T')[0];
           
-          let nightly = overrideMap.has(dateKey) ? overrideMap.get(dateKey)! : (roomType.basePrice || 1000);
+          if (!overrideMap.has(dateKey) && (roomType.basePrice == null || roomType.basePrice < 0)) {
+              throw new BadRequestException(`Base price for room type ${roomType.name} is not configured for date ${dateKey}`);
+          }
+          
+          let nightly = overrideMap.has(dateKey) ? overrideMap.get(dateKey)! : roomType.basePrice;
           
           // --- APPLY YIELD MANAGEMENT RULES ---
           let modifiedNightly = nightly;

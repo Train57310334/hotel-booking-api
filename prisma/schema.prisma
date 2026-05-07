@@ -116,6 +116,9 @@ model Hotel {
   googleAdsId        String? // Google Ads Conversion ID: AW-XXXXXXX
   analyticsEmbedUrl  String? // Looker Studio embed URL for analytics dashboard
 
+  // Channel Manager (OTA Sync)
+  channelManagerId   String? // External ID for the property in Channel Manager (e.g. Channex)
+
   // Payment Configuration
   promptPayId       String?
   bankName          String?
@@ -187,6 +190,7 @@ model RoomType {
   isFeatured  Boolean             @default(false)
   icalUrl           String?   // Used for external calendar sync (e.g. from Agoda/Booking.com)
   icalLastSyncedAt  DateTime? // Timestamp of last successful iCal sync
+  channelManagerRoomId String? // External Room ID in Channel Manager
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @default(now()) @updatedAt
   deletedAt   DateTime?
@@ -282,6 +286,7 @@ model RatePlan {
   cancellationRule  String?
   adultPricePolicy  String?
   childPricePolicy  String?
+  channelManagerRateId String? // External Rate Plan ID in Channel Manager
 
   hotel     Hotel          @relation(fields: [hotelId], references: [id])
   roomType  RoomType?      @relation(fields: [roomTypeId], references: [id])
@@ -349,6 +354,8 @@ model Booking {
   leadPhone       String
   specialRequests String?
   source          String?  @default("direct") // 'direct' or 'OTA'
+  channelName     String?  // e.g. 'Agoda', 'Booking.com'
+  otaReferenceId  String?  // OTA confirmation number
   notes           String? // Internal notes or OTA sync references
 
   isWebCheckedIn       Boolean @default(false)

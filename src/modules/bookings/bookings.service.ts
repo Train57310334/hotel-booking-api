@@ -7,6 +7,7 @@ import { EventsGateway } from '@/modules/events/events.gateway';
 import { ReviewsService } from '@/modules/reviews/reviews.service';
 import { ActivityLogsService } from '@/modules/activity-logs/activity-logs.service';
 import { SettingsService } from '@/modules/settings/settings.service';
+import { ChannelsService } from '@/modules/channels/channels.service';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
@@ -31,6 +32,7 @@ export class BookingsService {
     private reviewsService: ReviewsService,
     private activityLogsService: ActivityLogsService,
     private settingsService: SettingsService,
+    private channelsService: ChannelsService,
   ) {}
 
   // ─── BOOKING DRAFT STORE (Database backed, 15-min TTL) ─────────────────────────
@@ -182,7 +184,7 @@ export class BookingsService {
           promotionId: finalPromoId,
           checkIn: checkInDate,
           checkOut: checkOutDate,
-          guestsAdult: data.guests?.adult ?? 2,
+          guestsAdult: data.guests?.adult ?? 1,
           guestsChild: data.guests?.child ?? 0,
           totalAmount: data.totalAmount ?? 0,
           status: 'pending',
@@ -229,6 +231,15 @@ export class BookingsService {
 
       // 5. Emit Real-time Notification to Hotel Staff
       this.eventsGateway.broadcastToHotel(booking.hotelId, 'newBooking', booking);
+
+      // 6. Push Inventory to Channel Manager
+      const dateRangeStrs = [];
+      let cur = new Date(checkInDate);
+      while (cur < checkOutDate) {
+        dateRangeStrs.push(cur.toISOString().split('T')[0]);
+        cur.setDate(cur.getDate() + 1);
+      }
+      this.channelsService.pushInventoryUpdate(data.roomTypeId, dateRangeStrs).catch(e => console.error(e));
 
       return booking;
   }
@@ -444,7 +455,7 @@ export class BookingsService {
                promotionId: finalPromoId,
                checkIn: checkInDate,
                checkOut: checkOutDate,
-               guestsAdult: data.adults ?? 2,
+               guestsAdult: data.adults ?? 1,
                guestsChild: data.children ?? 0,
                totalAmount: backendCalculatedTotal,
                status: 'pending',
@@ -518,6 +529,17 @@ export class BookingsService {
 
         // H. Emit Real-time Notification
         this.eventsGateway.broadcastToHotel(newBooking.hotelId, 'newBooking', newBooking);
+
+        // I. Push Inventory to Channel Manager for all rooms
+        for (const roomOpt of data.rooms) {
+           const dateRangeStrs = [];
+           let cur = new Date(checkInDate);
+           while (cur < checkOutDate) {
+              dateRangeStrs.push(cur.toISOString().split('T')[0]);
+              cur.setDate(cur.getDate() + 1);
+           }
+           this.channelsService.pushInventoryUpdate(roomOpt.roomTypeId, dateRangeStrs).catch(e => console.error(e));
+        }
 
         return newBooking;
     });
@@ -604,6 +626,17 @@ export class BookingsService {
       userId
     );
 
+    // Push Inventory to Channel Manager
+    if (['pending', 'confirmed', 'checked_in'].includes(booking.status)) {
+        const dateRangeStrs = [];
+        let cur = new Date(booking.checkIn);
+        while (cur < new Date(booking.checkOut)) {
+            dateRangeStrs.push(cur.toISOString().split('T')[0]);
+            cur.setDate(cur.getDate() + 1);
+        }
+        this.channelsService.pushInventoryUpdate(booking.roomTypeId, dateRangeStrs).catch(e => console.error(e));
+    }
+
     return updatedBooking;
   }
 
@@ -625,10 +658,23 @@ export class BookingsService {
 
     await this.notificationsService.sendCancellationEmail(booking);
 
-    return this.prisma.booking.update({
+    const updatedBooking = await this.prisma.booking.update({
       where: { id: bookingId },
       data: { status: 'cancelled' },
     });
+
+    // Push Inventory to Channel Manager
+    if (['pending', 'confirmed', 'checked_in'].includes(booking.status)) {
+        const dateRangeStrs = [];
+        let cur = new Date(booking.checkIn);
+        while (cur < new Date(booking.checkOut)) {
+            dateRangeStrs.push(cur.toISOString().split('T')[0]);
+            cur.setDate(cur.getDate() + 1);
+        }
+        this.channelsService.pushInventoryUpdate(booking.roomTypeId, dateRangeStrs).catch(e => console.error(e));
+    }
+
+    return updatedBooking;
   }
 
   async requestFeedback(id: string) {
