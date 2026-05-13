@@ -28,6 +28,7 @@ async function main() {
   console.log('✅ Deleted overrides & rate plans');
 
   // 4. Physical Rooms
+  await prisma.maintenanceReport.deleteMany({});
   await prisma.roomStatusLog.deleteMany({});
   await prisma.room.deleteMany({});
   console.log('✅ Deleted all Physical Rooms & Logs');
@@ -42,6 +43,11 @@ async function main() {
 
   // 5.1 Promotions
   await prisma.promotion.deleteMany({});
+
+  // 5.2 Hotel relations
+  await prisma.yieldRule.deleteMany({});
+  await prisma.subscriptionPayment.deleteMany({});
+  await prisma.activityLog.deleteMany({});
 
   // 6. Hotels - Clean Wipe
   await prisma.hotel.deleteMany({});
