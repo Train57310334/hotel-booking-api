@@ -6,9 +6,11 @@ import { PlansService } from './plans.service';
 import { StripeService } from './stripe.service';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module'; // Needed for role guards
+import { SettingsModule } from '../settings/settings.module';
+import { ActivityLogsModule } from '../activity-logs/activity-logs.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule],
+  imports: [PrismaModule, AuthModule, SettingsModule, ActivityLogsModule],
   controllers: [SubscriptionsController, PlansController],
   providers: [SubscriptionsService, PlansService, StripeService],
 })

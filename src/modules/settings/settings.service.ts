@@ -22,6 +22,8 @@ export class SettingsService {
         // Payment Types (Stripe)
         stripeKey: dbSettings['stripeKey'] || process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '',
         stripeSecret: dbSettings['stripeSecret'] || process.env.STRIPE_SECRET_KEY || '',
+        stripeWebhookSecret: dbSettings['stripeWebhookSecret'] || process.env.STRIPE_WEBHOOK_SECRET || '',
+
         
         // Payment Types (Omise)
         omisePublicKey: dbSettings['omisePublicKey'] || process.env.NEXT_PUBLIC_OMISE_PUBLIC_KEY || '',
@@ -97,6 +99,7 @@ export class SettingsService {
       'currency': 'general',
       'stripeKey': 'payment',
       'stripeSecret': 'payment',
+      'stripeWebhookSecret': 'payment',
       'omisePublicKey': 'payment',
       'omiseSecretKey': 'payment',
       'smtpHost': 'notification',
@@ -183,8 +186,9 @@ export class SettingsService {
 
   async getStripeConfig() {
     const secretKey = await this.get('stripeSecret', 'STRIPE_SECRET_KEY');
+    const webhookSecret = await this.get('stripeWebhookSecret', 'STRIPE_WEBHOOK_SECRET');
     if (!secretKey) throw new Error('Stripe Secret Key is missing in Settings and Environment Variables.');
-    return { secretKey };
+    return { secretKey, webhookSecret };
   }
 
   async getOmiseConfig() {

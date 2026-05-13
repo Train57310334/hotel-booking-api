@@ -2,7 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { json, urlencoded } from 'express';
+import * as express from 'express';
 import { SettingsService } from './modules/settings/settings.service';
 
 async function bootstrap() {
@@ -35,9 +35,19 @@ async function bootstrap() {
   });
   console.log(`🔒 CORS allowed origins: ${allowedOrigins.join(', ')}`);
   
+  // ─── Raw body for Stripe webhook signature verification ───────────────────
+  // IMPORTANT: The Stripe webhook endpoint MUST receive the raw body bytes.
+  // We apply express.raw() ONLY to the webhook route BEFORE the global json()
+  // parser so that req.rawBody is populated correctly by NestJS's rawBody:true.
+  // All other routes use the standard json() parser with a 50MB limit.
+  app.use(
+    '/api/subscriptions/webhook',
+    express.raw({ type: 'application/json' })
+  );
+
   // Increase payload limit to 50MB for Base64 image uploads (Passports/Signatures)
-  app.use(json({ limit: '50mb' }));
-  app.use(urlencoded({ extended: true, limit: '50mb' }));
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   const config = new DocumentBuilder()
     .setTitle('Hotel Booking API')

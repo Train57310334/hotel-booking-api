@@ -1,19 +1,10 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import Stripe from 'stripe';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class StripeService {
-    private stripe: Stripe;
-
-    constructor() {
-        const apiKey = process.env.STRIPE_SECRET_KEY;
-        if (!apiKey) {
-            console.warn('STRIPE_SECRET_KEY is not defined in environment variables.');
-        }
-        this.stripe = new Stripe(apiKey || 'sk_test_dummy', {
-            apiVersion: '2023-10-16' as any, // Use an appropriate API version
-        });
-    }
+    constructor(private settingsService: SettingsService) {}
 
     async createCheckoutSession(params: {
         hotelId: string;
@@ -25,7 +16,10 @@ export class StripeService {
         customerEmail?: string;
     }) {
         try {
-            const session = await this.stripe.checkout.sessions.create({
+            const { secretKey } = await this.settingsService.getStripeConfig();
+            const stripe = new Stripe(secretKey, { apiVersion: '2023-10-16' as any });
+
+            const session = await stripe.checkout.sessions.create({
                 payment_method_types: ['card', 'promptpay'],
                 line_items: [
                     {
@@ -58,11 +52,13 @@ export class StripeService {
         }
     }
 
-    constructEvent(payload: any, signature: string): Stripe.Event {
-        const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    async constructEvent(payload: any, signature: string): Promise<Stripe.Event> {
+        const { secretKey, webhookSecret } = await this.settingsService.getStripeConfig();
+        const secret = webhookSecret || process.env.STRIPE_WEBHOOK_SECRET;
         if (!secret) {
             throw new InternalServerErrorException('Stripe webhook secret is not configured.');
         }
-        return this.stripe.webhooks.constructEvent(payload, signature, secret);
+        const stripe = new Stripe(secretKey, { apiVersion: '2023-10-16' as any });
+        return stripe.webhooks.constructEvent(payload, signature, secret);
     }
 }

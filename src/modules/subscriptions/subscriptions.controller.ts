@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Get, UseGuards, Req, ForbiddenException } from '@nestjs/common';
+import { Body, Controller, Post, Get, UseGuards, Req, ForbiddenException, Headers, BadRequestException } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -11,7 +11,6 @@ import { RawBodyRequest } from '@nestjs/common';
 @ApiTags('subscriptions')
 @ApiBearerAuth()
 @Controller('subscriptions')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class SubscriptionsController {
     constructor(
         private readonly subscriptionsService: SubscriptionsService,
@@ -20,6 +19,7 @@ export class SubscriptionsController {
     ) {}
 
     @Post('checkout-session')
+    @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles('owner', 'hotel_admin')
     @ApiOperation({ summary: 'Create a Stripe Checkout Session for subscription upgrade' })
     async createCheckoutSession(
@@ -60,35 +60,47 @@ export class SubscriptionsController {
 
     @Post('webhook')
     @ApiOperation({ summary: 'Stripe Webhook Endpoint' })
-    async stripeWebhook(@Req() req: RawBodyRequest<Request>, @Body() body: any) {
+    async stripeWebhook(
+        @Req() req: RawBodyRequest<Request>,
+        @Headers('stripe-signature') signature: string,
+    ) {
         try {
-            const signature = req.headers['stripe-signature'] as string;
-            // The raw body is required by Stripe to verify the payload
-            const event = this.stripeService.constructEvent(req.rawBody, signature);
+            // req.rawBody is populated by express.raw() middleware in main.ts
+            // It must be the raw bytes, not the parsed JSON object.
+            const rawPayload = req.rawBody;
+
+            if (!rawPayload) {
+                throw new BadRequestException('Missing raw body — ensure express.raw() middleware is applied to this route.');
+            }
+
+            if (!signature) {
+                throw new BadRequestException('Missing stripe-signature header.');
+            }
+
+            const event = await this.stripeService.constructEvent(rawPayload, signature);
 
             if (event.type === 'checkout.session.completed') {
                 const session = event.data.object as any;
                 const hotelId = session.metadata?.hotelId;
                 const planId = session.metadata?.planId;
                 const amount = session.amount_total;
-                const chargeId = session.payment_intent as string; // Or session.id
+                const chargeId = session.payment_intent as string;
 
                 if (hotelId && planId) {
-                     await this.subscriptionsService.handleSubscriptionPayment(hotelId, planId, amount, chargeId);
+                    await this.subscriptionsService.handleSubscriptionPayment(hotelId, planId, amount, chargeId);
                 }
             }
 
             return { received: true };
         } catch (err) {
             console.error('Webhook Error:', err.message);
-            // It's important to return a 400 error if verification fails
-            // return new BadRequestException(`Webhook Error: ${err.message}`);
-            // But throw is handled by NestJS cleanly
-            throw new Error(`Webhook Error: ${err.message}`);
+            // Return 400 so Stripe knows the event was not processed
+            throw new BadRequestException(`Webhook Error: ${err.message}`);
         }
     }
 
     @Get('payments')
+    @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles('platform_admin')
     @ApiOperation({ summary: 'Get all subscription payments (Platform Admin Only)' })
     async getAllPayments() {

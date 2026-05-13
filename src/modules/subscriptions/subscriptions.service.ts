@@ -1,9 +1,13 @@
 import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 
 @Injectable()
 export class SubscriptionsService {
-    constructor(private prisma: PrismaService) {}
+    constructor(
+        private prisma: PrismaService,
+        private activityLogsService: ActivityLogsService
+    ) {}
 
     async upgradePackage(user: any, requestHotelId: string, newPackage: string) {
         // Enforce basic auth logic
@@ -63,6 +67,13 @@ export class SubscriptionsService {
             })
         ]);
         
+        // Log the payment activity
+        this.activityLogsService.logAction(
+            hotelId,
+            'PAYMENT_CAPTURED',
+            { amount, currency: 'THB', plan: plan.name, provider: 'stripe', chargeId }
+        );
+
         console.log(`Successfully upgraded hotel ${hotelId} to ${plan.id}`);
     }
 

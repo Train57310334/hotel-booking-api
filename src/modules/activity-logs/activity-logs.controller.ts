@@ -12,7 +12,7 @@ export class ActivityLogsController {
 
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'owner') // Only High-Level staff can view logs
+  @Roles('admin', 'owner', 'platform_admin') // High-Level staff + Super Admin can view logs
   @Get()
   @ApiOperation({ summary: 'Get activity logs with optional filtering' })
   async getLogs(

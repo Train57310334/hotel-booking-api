@@ -351,11 +351,11 @@ export class PaymentsService {
   }
 
   async handleWebhook(signature: string, payload: Buffer) {
-    const { secretKey } = await this.settingsService.getStripeConfig();
+    const { secretKey, webhookSecret: configWebhookSecret } = await this.settingsService.getStripeConfig();
     const stripe = new Stripe(secretKey, { apiVersion: '2024-06-20' as any });
     
     // ✅ BUG #1 FIX: Verify webhook signature to prevent forged payment events
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    const webhookSecret = configWebhookSecret || process.env.STRIPE_WEBHOOK_SECRET;
     let event;
     if (webhookSecret && signature) {
       try {
