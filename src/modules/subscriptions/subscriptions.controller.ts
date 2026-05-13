@@ -65,9 +65,9 @@ export class SubscriptionsController {
         @Headers('stripe-signature') signature: string,
     ) {
         try {
-            // req.rawBody is populated by express.raw() middleware in main.ts
-            // It must be the raw bytes, not the parsed JSON object.
-            const rawPayload = req.rawBody;
+            // req.rawBody is populated natively by NestJS { rawBody: true }
+            // If express.raw() is used instead, it populates req.body with the Buffer
+            const rawPayload = req.rawBody || req.body;
 
             if (!rawPayload) {
                 throw new BadRequestException('Missing raw body — ensure express.raw() middleware is applied to this route.');
