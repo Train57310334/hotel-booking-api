@@ -24,7 +24,7 @@ export class SubscriptionsController {
     @ApiOperation({ summary: 'Create a Stripe Checkout Session for subscription upgrade' })
     async createCheckoutSession(
         @Req() req,
-        @Body() body: { hotelId: string; planId: string }
+        @Body() body: { hotelId: string; planId: string; returnUrl?: string }
     ) {
         const userHotelId = req.user.hotelId;
         const isAdmin = req.user.roles?.includes('platform_admin');
@@ -44,14 +44,33 @@ export class SubscriptionsController {
 
         // App URL from ENV or fallback
         const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+        
+        let baseUrl = body.returnUrl || `${appUrl}/admin/subscription`;
+        
+        // Strip existing query params for success/canceled just in case
+        try {
+            const urlObj = new URL(baseUrl);
+            urlObj.searchParams.delete('success');
+            urlObj.searchParams.delete('canceled');
+            urlObj.searchParams.delete('session_id');
+            baseUrl = urlObj.toString();
+        } catch(e) {} // Ignore invalid URLs
+
+        const successUrl = baseUrl.includes('?') 
+            ? `${baseUrl}&success=true&session_id={CHECKOUT_SESSION_ID}` 
+            : `${baseUrl}?success=true&session_id={CHECKOUT_SESSION_ID}`;
+            
+        const cancelUrl = baseUrl.includes('?') 
+            ? `${baseUrl}&canceled=true` 
+            : `${baseUrl}?canceled=true`;
 
         const session = await this.stripeService.createCheckoutSession({
             hotelId: body.hotelId,
             planId: body.planId,
             amountInSatang,
             currency: 'thb',
-            successUrl: `${appUrl}/admin/subscription?success=true&session_id={CHECKOUT_SESSION_ID}`,
-            cancelUrl: `${appUrl}/admin/subscription?canceled=true`,
+            successUrl,
+            cancelUrl,
             customerEmail: req.user.email,
         });
 
