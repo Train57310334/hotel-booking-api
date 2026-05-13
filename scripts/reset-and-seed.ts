@@ -47,6 +47,79 @@ async function main() {
   await prisma.hotel.deleteMany({});
   console.log('✅ Deleted all Hotels');
 
+  // 6.5 Subscription Plans
+  await prisma.subscriptionPlan.deleteMany({});
+  console.log('✅ Deleted all Subscription Plans');
+  
+  await prisma.subscriptionPlan.createMany({
+    data: [
+      {
+        id: 'LITE',
+        name: 'Lite',
+        price: 0,
+        priceLabel: 'Free',
+        period: 'forever',
+        description: 'Perfect for small properties getting started',
+        features: ['Up to 5 rooms', 'Basic booking engine', '1 Staff account'],
+        missingFeatures: ['Online Payments', 'Channel Manager', 'Advanced Analytics'],
+        isPopular: false,
+        color: 'slate',
+        icon: 'Package',
+        maxRooms: 5,
+        maxRoomTypes: 2,
+        maxStaff: 1,
+        hasPromotions: false,
+        hasOnlinePayment: false,
+        hasSeo: false,
+        hasCustomDomain: false,
+        hasAdvancedAnalytics: false
+      },
+      {
+        id: 'PRO',
+        name: 'Pro',
+        price: 1500,
+        priceLabel: '฿1,500',
+        period: '/month',
+        description: 'Everything you need to grow your hotel business',
+        features: ['Up to 30 rooms', 'Online Payments (Stripe/Omise)', 'Promotions module', '5 Staff accounts', 'Advanced Analytics'],
+        missingFeatures: ['Custom Domain', 'White-labeling'],
+        isPopular: true,
+        color: 'blue',
+        icon: 'Rocket',
+        maxRooms: 30,
+        maxRoomTypes: 10,
+        maxStaff: 5,
+        hasPromotions: true,
+        hasOnlinePayment: true,
+        hasSeo: false,
+        hasCustomDomain: false,
+        hasAdvancedAnalytics: true
+      },
+      {
+        id: 'ENTERPRISE',
+        name: 'Enterprise',
+        price: 5000,
+        priceLabel: '฿5,000',
+        period: '/month',
+        description: 'Ultimate power and unlimited capacity',
+        features: ['Unlimited rooms', 'Custom Domain', 'SEO Configuration', 'Unlimited Staff', 'Dedicated Account Manager'],
+        missingFeatures: [],
+        isPopular: false,
+        color: 'amber',
+        icon: 'Crown',
+        maxRooms: 9999, // Infinite
+        maxRoomTypes: 9999,
+        maxStaff: 999,
+        hasPromotions: true,
+        hasOnlinePayment: true,
+        hasSeo: true,
+        hasCustomDomain: true,
+        hasAdvancedAnalytics: true
+      }
+    ]
+  });
+  console.log('✅ Created Subscription Plans');
+
   console.log('checking for hotel owner...');
   let hotelOwner = await prisma.user.findUnique({ where: { email: 'owner@mockhotel.com' } });
   
