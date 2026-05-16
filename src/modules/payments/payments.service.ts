@@ -12,12 +12,17 @@ export class PaymentsService {
     private notificationsService: NotificationsService // Inject
   ) {}
 
-  async findAll(search?: string, status?: string) {
-    // 1. Fetch Online Payments
+  async findAll(hotelId?: string, search?: string, status?: string) {
+    // Build booking filter with hotelId scope
+    const bookingFilter: any = {};
+    if (hotelId) bookingFilter.hotelId = hotelId;
+    if (search) bookingFilter.leadName = { contains: search, mode: 'insensitive' };
+
+    // 1. Fetch Online Payments (scoped to hotel)
     const payments = await this.prisma.payment.findMany({
       where: {
         status: status && status !== 'manual' ? status : undefined,
-        booking: search ? { leadName: { contains: search, mode: 'insensitive' } } : undefined
+        booking: Object.keys(bookingFilter).length > 0 ? bookingFilter : undefined
       },
       include: { booking: true },
     });
@@ -28,7 +33,7 @@ export class PaymentsService {
         manualPayments = await this.prisma.folioCharge.findMany({
             where: {
                 type: 'PAYMENT',
-                booking: search ? { leadName: { contains: search, mode: 'insensitive' } } : undefined
+                booking: Object.keys(bookingFilter).length > 0 ? bookingFilter : undefined
             },
             include: { booking: true }
         });

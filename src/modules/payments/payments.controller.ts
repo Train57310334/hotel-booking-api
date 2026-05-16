@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, Get, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Param, Post, Get, Query, UseGuards, Req } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -11,8 +11,9 @@ export class PaymentsController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Get('admin/all')
-  findAll(@Query('search') search?: string, @Query('status') status?: string) {
-    return this.svc.findAll(search, status);
+  findAll(@Req() req: any, @Query('search') search?: string, @Query('status') status?: string, @Query('hotelId') hotelId?: string) {
+    const resolvedHotelId = hotelId || req.headers['x-hotel-id'];
+    return this.svc.findAll(resolvedHotelId, search, status);
   }
 
   @ApiBearerAuth()

@@ -71,6 +71,8 @@ export class RolesGuard implements CanActivate {
             'admin': 90,
             'manager': 80,
             'reception': 10,
+            'receptionist': 10,
+            'housekeeper': 5,
         };
         
         const userLevel = hierarchy[userRole] || 0;

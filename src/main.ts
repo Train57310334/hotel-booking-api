@@ -31,7 +31,7 @@ async function bootstrap() {
     },
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'x-hotel-id'],
   });
   console.log(`🔒 CORS allowed origins: ${allowedOrigins.join(', ')}`);
   
