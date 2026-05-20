@@ -299,39 +299,39 @@ export class HotelsService {
   async getSuperStats() {
     // 1. Fetch all hotels with their rooms to count inventory
     const hotels = await this.prisma.hotel.findMany({
-      include: {
-        roomTypes: {
-          include: { rooms: { select: { id: true } } }
+        select: {
+            package: true,
+            _count: { select: { rooms: true } }
         }
-      }
     });
 
-    // 2. Aggregate
     let totalHotels = hotels.length;
     let totalRooms = 0;
     let estimatedMRR = 0;
 
-    let planCounts = {
-        LITE: 0,
-        PRO: 0,
-        ENTERPRISE: 0
-    };
+    let planCounts: Record<string, number> = {};
+
+    // Fetch actual plan prices from DB for accurate MRR
+    const allPlans = await this.prisma.subscriptionPlan.findMany({
+        select: { id: true, name: true, price: true }
+    });
+    const planPriceMap: Record<string, number> = {};
+    for (const p of allPlans) {
+        planPriceMap[p.id] = p.price;
+        planPriceMap[p.name] = p.price;
+    }
 
     hotels.forEach(h => {
-        // Count rooms
-        totalRooms += h.roomTypes.reduce((sum, rt) => sum + (rt.rooms?.length || 0), 0);
+        // Count rooms efficiently using _count
+        totalRooms += h._count.rooms;
         
-        // Count plans && MRR
+        // Count plans & MRR
         const pkg = h.package || 'LITE';
-        if (pkg === 'PRO') {
-            estimatedMRR += 990;
-            planCounts.PRO++;
-        } else if (pkg === 'ENTERPRISE') {
-            estimatedMRR += 2990;
-            planCounts.ENTERPRISE++;
-        } else {
-            planCounts.LITE++;
-        }
+        planCounts[pkg] = (planCounts[pkg] || 0) + 1;
+        
+        // Use actual plan price from DB, fallback to 0
+        const planPrice = planPriceMap[pkg] || 0;
+        estimatedMRR += planPrice;
     });
 
     // 3. ✅ BUG FIX: Use real DailyStats for MRR/Occupancy chart instead of hardcoded mock data

@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Get, UseGuards, Req, ForbiddenException, Headers, BadRequestException } from '@nestjs/common';
+import { Body, Controller, Post, Get, Param, UseGuards, Req, ForbiddenException, Headers, BadRequestException } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -18,13 +18,76 @@ export class SubscriptionsController {
         private readonly plansService: PlansService
     ) {}
 
+    /**
+     * Get subscription status for the current hotel
+     */
+    @Get('status/:hotelId')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles('owner', 'hotel_admin', 'platform_admin')
+    @ApiOperation({ summary: 'Get subscription status for a hotel' })
+    async getSubscriptionStatus(
+        @Param('hotelId') hotelId: string,
+        @Req() req
+    ) {
+        const userHotelId = req.user.hotelId;
+        const isAdmin = req.user.roles?.includes('platform_admin');
+
+        if (!isAdmin && userHotelId !== hotelId) {
+            throw new ForbiddenException('You do not have permission to view this hotel\'s subscription');
+        }
+
+        return this.subscriptionsService.getSubscriptionStatus(hotelId);
+    }
+
+    /**
+     * Get payment history for a specific hotel
+     */
+    @Get('history/:hotelId')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles('owner', 'hotel_admin', 'platform_admin')
+    @ApiOperation({ summary: 'Get payment history for a hotel' })
+    async getPaymentHistory(
+        @Param('hotelId') hotelId: string,
+        @Req() req
+    ) {
+        const userHotelId = req.user.hotelId;
+        const isAdmin = req.user.roles?.includes('platform_admin');
+
+        if (!isAdmin && userHotelId !== hotelId) {
+            throw new ForbiddenException('You do not have permission to view this hotel\'s payment history');
+        }
+
+        return this.subscriptionsService.getHotelPaymentHistory(hotelId);
+    }
+
+    /**
+     * Cancel auto-renewal for a hotel subscription
+     */
+    @Post('cancel-auto-renew')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles('owner', 'hotel_admin')
+    @ApiOperation({ summary: 'Cancel auto-renewal for a subscription' })
+    async cancelAutoRenew(
+        @Req() req,
+        @Body() body: { hotelId: string }
+    ) {
+        const userHotelId = req.user.hotelId;
+        const isAdmin = req.user.roles?.includes('platform_admin');
+
+        if (!isAdmin && userHotelId !== body.hotelId) {
+            throw new ForbiddenException('You do not have permission to manage this hotel\'s subscription');
+        }
+
+        return this.subscriptionsService.cancelAutoRenew(body.hotelId);
+    }
+
     @Post('checkout-session')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles('owner', 'hotel_admin')
     @ApiOperation({ summary: 'Create a Stripe Checkout Session for subscription upgrade' })
     async createCheckoutSession(
         @Req() req,
-        @Body() body: { hotelId: string; planId: string; returnUrl?: string }
+        @Body() body: { hotelId: string; planId: string; returnUrl?: string; billingCycle?: string }
     ) {
         const userHotelId = req.user.hotelId;
         const isAdmin = req.user.roles?.includes('platform_admin');
@@ -72,6 +135,7 @@ export class SubscriptionsController {
             successUrl,
             cancelUrl,
             customerEmail: req.user.email,
+            billingCycle: body.billingCycle || 'one_time',
         });
 
         return { url: session.url };
@@ -102,11 +166,25 @@ export class SubscriptionsController {
                 const session = event.data.object as any;
                 const hotelId = session.metadata?.hotelId;
                 const planId = session.metadata?.planId;
+                const billingCycle = session.metadata?.billingCycle || 'one_time';
                 const amount = session.amount_total;
+                
+                // For 'payment' mode, payment_intent is the charge ID
+                // For 'subscription' mode, subscription is the subscription ID
                 const chargeId = session.payment_intent as string;
+                const stripeSubscriptionId = session.subscription as string;
+                const stripeCustomerId = session.customer as string;
 
                 if (hotelId && planId) {
-                    await this.subscriptionsService.handleSubscriptionPayment(hotelId, planId, amount, chargeId);
+                    await this.subscriptionsService.handleSubscriptionPayment(
+                        hotelId, 
+                        planId, 
+                        amount, 
+                        chargeId,
+                        billingCycle,
+                        stripeSubscriptionId,
+                        stripeCustomerId
+                    );
                 }
             }
 

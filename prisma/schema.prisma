@@ -135,7 +135,12 @@ model Hotel {
   serviceChargeRate Float   @default(0.0) // E.g., 10% Service Charge
 
   // Subscription
-  subscriptionEnd DateTime?
+  subscriptionStart        DateTime?                 // Start of current subscription period
+  subscriptionEnd          DateTime?                 // End of current subscription period
+  subscriptionStatus       String   @default("inactive") // active, expired, grace_period, cancelled
+  billingCycle             String   @default("one_time") // one_time, monthly
+  stripeSubscriptionId     String?                   // Stripe Subscription ID for auto-renew
+  stripeCustomerId         String?                   // Stripe Customer ID
 
   // --- Dynamic Plan Limits & Features ---
   maxRooms             Int     @default(2) // LITE=2, PRO=30, ENT=Unlimited
@@ -424,6 +429,14 @@ model SubscriptionPayment {
   status   String  @default("success") // success, failed
   provider String  @default("stripe")
   chargeId String? // Stripe Charge ID
+
+  // Enhanced tracking fields
+  type         String    @default("upgrade")  // upgrade, renewal, downgrade
+  periodStart  DateTime?                      // Billing period start
+  periodEnd    DateTime?                      // Billing period end
+  previousPlan String?                        // Plan before change (for upgrade history)
+  planName     String?                        // Snapshot of plan name at time of payment
+  invoiceUrl   String?                        // Stripe invoice URL
 
   hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 

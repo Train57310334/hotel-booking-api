@@ -18,8 +18,15 @@ export class SubscriptionCronService {
       // Find all hotels that are on a paid plan but their subscription has expired
       const expiredHotels = await this.prisma.hotel.findMany({
         where: {
-          package: { in: ['PRO', 'ENTERPRISE'] },
-          subscriptionEnd: { lt: now }
+          package: { not: 'LITE' },
+          subscriptionEnd: { lt: now },
+          subscriptionStatus: { not: 'expired' }, // Don't re-process already expired
+        },
+        select: {
+          id: true,
+          name: true,
+          package: true,
+          subscriptionStatus: true,
         }
       });
 
@@ -30,19 +37,65 @@ export class SubscriptionCronService {
 
       this.logger.log(`Found ${expiredHotels.length} expired hotels. Demoting to LITE plan.`);
 
-      // Demote them sequentially or via updateMany
-      // We use updateMany for atomicity and speed
-      const result = await this.prisma.hotel.updateMany({
-        where: {
-          package: { in: ['PRO', 'ENTERPRISE'] },
-          subscriptionEnd: { lt: now }
-        },
-        data: {
-          package: 'LITE'
-        }
-      });
+      // Get LITE plan limits (or use sensible defaults)
+      let liteLimits = {
+        maxRooms: 2,
+        maxRoomTypes: 1,
+        maxStaff: 1,
+        hasPromotions: false,
+        hasOnlinePayment: false,
+        hasSeo: false,
+        hasCustomDomain: false,
+        hasAdvancedAnalytics: false,
+      };
 
-      this.logger.log(`Successfully demoted ${result.count} hotels to LITE plan.`);
+      try {
+        const litePlan = await this.prisma.subscriptionPlan.findFirst({
+          where: {
+            OR: [
+              { name: 'Lite' },
+              { name: 'LITE' },
+              { price: 0 },
+            ]
+          }
+        });
+        if (litePlan) {
+          liteLimits = {
+            maxRooms: litePlan.maxRooms,
+            maxRoomTypes: litePlan.maxRoomTypes,
+            maxStaff: litePlan.maxStaff,
+            hasPromotions: litePlan.hasPromotions,
+            hasOnlinePayment: litePlan.hasOnlinePayment,
+            hasSeo: litePlan.hasSeo,
+            hasCustomDomain: litePlan.hasCustomDomain,
+            hasAdvancedAnalytics: litePlan.hasAdvancedAnalytics,
+          };
+        }
+      } catch (e) {
+        this.logger.warn('Could not fetch Lite plan from DB, using defaults');
+      }
+
+      // Process each expired hotel individually to properly reset limits
+      for (const hotel of expiredHotels) {
+        try {
+          await this.prisma.hotel.update({
+            where: { id: hotel.id },
+            data: {
+              package: 'LITE',
+              subscriptionStatus: 'expired',
+              stripeSubscriptionId: null,
+              billingCycle: 'one_time',
+              ...liteLimits,
+            }
+          });
+
+          this.logger.log(`Demoted hotel "${hotel.name}" (${hotel.id}) from ${hotel.package} to LITE plan with reset limits.`);
+        } catch (err) {
+          this.logger.error(`Failed to demote hotel ${hotel.id}: ${err.message}`);
+        }
+      }
+
+      this.logger.log(`Successfully processed ${expiredHotels.length} expired subscriptions.`);
       
     } catch (error) {
       this.logger.error('Failed to process subscription expirations', error);

@@ -14,27 +14,38 @@ export class StripeService {
         successUrl: string;
         cancelUrl: string;
         customerEmail?: string;
+        billingCycle?: string;
     }) {
         try {
             const { secretKey } = await this.settingsService.getStripeConfig();
             const stripe = new Stripe(secretKey, { apiVersion: '2023-10-16' as any });
 
+            const isMonthly = params.billingCycle === 'monthly';
+
+            // Base price data
+            const priceData: any = {
+                currency: params.currency,
+                product_data: {
+                    name: `BookingKub ${params.planId} Plan`,
+                    description: isMonthly ? 'Monthly Platform Subscription' : 'Platform Subscription Fee',
+                },
+                unit_amount: params.amountInSatang,
+            };
+
+            // If monthly, add recurring interval and force card only (PromptPay doesn't support subscriptions)
+            if (isMonthly) {
+                priceData.recurring = { interval: 'month' };
+            }
+
             const session = await stripe.checkout.sessions.create({
-                payment_method_types: ['card', 'promptpay'],
+                payment_method_types: isMonthly ? ['card'] : ['card', 'promptpay'],
                 line_items: [
                     {
-                        price_data: {
-                            currency: params.currency,
-                            product_data: {
-                                name: `BookingKub ${params.planId} Plan`,
-                                description: 'Platform Subscription Fee',
-                            },
-                            unit_amount: params.amountInSatang,
-                        },
+                        price_data: priceData,
                         quantity: 1,
                     },
                 ],
-                mode: 'payment', // Or 'subscription' if we have actual Stripe products mapped
+                mode: isMonthly ? 'subscription' : 'payment',
                 success_url: params.successUrl,
                 cancel_url: params.cancelUrl,
                 client_reference_id: params.hotelId,
@@ -42,6 +53,7 @@ export class StripeService {
                 metadata: {
                     hotelId: params.hotelId,
                     planId: params.planId,
+                    billingCycle: params.billingCycle || 'one_time',
                 }
             });
 
