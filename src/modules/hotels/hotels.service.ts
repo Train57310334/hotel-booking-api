@@ -301,7 +301,11 @@ export class HotelsService {
     const hotels = await this.prisma.hotel.findMany({
         select: {
             package: true,
-            _count: { select: { rooms: true } }
+            roomTypes: {
+                select: {
+                    _count: { select: { rooms: true } }
+                }
+            }
         }
     });
 
@@ -322,8 +326,9 @@ export class HotelsService {
     }
 
     hotels.forEach(h => {
-        // Count rooms efficiently using _count
-        totalRooms += h._count.rooms;
+        // Count rooms efficiently using _count on roomTypes
+        const hotelRooms = h.roomTypes.reduce((sum, rt) => sum + rt._count.rooms, 0);
+        totalRooms += hotelRooms;
         
         // Count plans & MRR
         const pkg = h.package || 'LITE';
