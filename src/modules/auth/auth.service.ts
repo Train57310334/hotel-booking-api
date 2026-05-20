@@ -1,10 +1,30 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { JwtStrategy } from './jwt.strategy';
+
+// ─── SECURITY: Password complexity requirements ─────────────────────────────
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/;
+
+function validatePassword(password: string): void {
+  if (!password || password.length < PASSWORD_MIN_LENGTH) {
+    throw new BadRequestException(`Password must be at least ${PASSWORD_MIN_LENGTH} characters long`);
+  }
+  if (!PASSWORD_REGEX.test(password)) {
+    throw new BadRequestException('Password must contain at least one uppercase letter, one lowercase letter, and one number');
+  }
+}
+
+// ─── SECURITY: Strip sensitive fields from user objects before returning ─────
+function sanitizeUser(user: any): any {
+  if (!user) return user;
+  const { passwordHash, resetPasswordToken, resetPasswordExpires, ...safe } = user;
+  return safe;
+}
 
 @Injectable()
 export class AuthService {
@@ -17,10 +37,12 @@ export class AuthService {
 
   // ✅ Register
   async register(data: { email: string; password: string; name?: string; phone?: string }) {
+    validatePassword(data.password);
+
     const existing = await this.prisma.user.findUnique({ where: { email: data.email } });
     if (existing) throw new ConflictException('Email already registered');
 
-    const hashed = await bcrypt.hash(data.password, 10);
+    const hashed = await bcrypt.hash(data.password, 12);
 
     const user = await this.prisma.user.create({
       data: {
@@ -33,7 +55,7 @@ export class AuthService {
     });
 
     const token = this.generateToken(user);
-    return { user, token };
+    return { user: sanitizeUser(user), token };
   }
 
   // ✅ Register Partner (Owner + Hotel)
@@ -45,10 +67,12 @@ export class AuthService {
     phone?: string;
     package?: string; 
   }) {
+    validatePassword(data.password);
+
     const existing = await this.prisma.user.findUnique({ where: { email: data.email } });
     if (existing) throw new ConflictException('Email already registered');
 
-    const hashed = await bcrypt.hash(data.password, 10);
+    const hashed = await bcrypt.hash(data.password, 12);
 
     // Transaction: User -> Hotel -> Assignment
     return this.prisma.$transaction(async (tx) => {
@@ -109,7 +133,7 @@ export class AuthService {
         };
 
         const token = this.generateToken(userWithRole);
-        return { user, hotel, token };
+        return { user: sanitizeUser(user), hotel, token };
     });
   }
 
@@ -125,7 +149,7 @@ export class AuthService {
     if (!valid) throw new UnauthorizedException('Invalid email or password');
 
     const token = this.generateToken(user);
-    return { user, token };
+    return { user: sanitizeUser(user), token };
   }
 
   // ✅ Get Profile
@@ -205,7 +229,8 @@ export class AuthService {
 
     if (!user) throw new UnauthorizedException('Invalid or expired password reset token');
 
-    const newHash = await bcrypt.hash(newPassword, 10);
+    validatePassword(newPassword);
+    const newHash = await bcrypt.hash(newPassword, 12);
 
     await this.prisma.user.update({
       where: { id: user.id },

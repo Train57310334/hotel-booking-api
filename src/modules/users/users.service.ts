@@ -65,7 +65,23 @@ export class UsersService {
   }
 
   me(id: string) {
-    return this.prisma.user.findUnique({ where: { id } });
+    return this.prisma.user.findUnique({
+      where: { id },
+      // SECURITY: Exclude sensitive fields from response
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        phone: true,
+        avatarUrl: true,
+        roles: true,
+        tags: true,
+        notes: true,
+        preferences: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
   }
 
   findOne(id: string) {

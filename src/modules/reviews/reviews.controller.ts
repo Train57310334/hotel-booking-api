@@ -2,6 +2,8 @@ import { Body, Controller, Get, Param, Post, Put, Delete, Query, UseGuards, Req 
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ReviewsService } from './reviews.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 @ApiTags('reviews')
 @Controller('reviews')
@@ -43,32 +45,36 @@ export class ReviewsController {
   }
 
   // ─── Admin: List All ───────────────────────────────────────────────────────
+  // SECURITY FIX: Added RolesGuard + @Roles — was accessible to any logged-in user
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin', 'platform_admin')
   @Get('admin/all')
   findAll(@Query('status') status?: string, @Query('hotelId') hotelId?: string) {
     return this.svc.findAll(status, hotelId);
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin', 'platform_admin')
   @Get('admin/stats')
   getStats(@Query('hotelId') hotelId?: string) {
     return this.svc.getStats(hotelId);
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin', 'platform_admin')
   @Put('admin/:id/status')
   updateStatus(@Param('id') id: string, @Body() body: { status: string }) {
     return this.svc.updateStatus(id, body.status);
   }
 
-  @Delete('admin/:id')
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin', 'platform_admin')
+  @Delete('admin/:id')
   delete(@Param('id') id: string) {
     return this.svc.delete(id);
   }
 }
-

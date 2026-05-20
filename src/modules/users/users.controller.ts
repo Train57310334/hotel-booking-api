@@ -11,7 +11,9 @@ import { Roles } from '../auth/decorators/roles.decorator';
 export class UsersController {
   constructor(private svc: UsersService) {}
 
-  @UseGuards(JwtAuthGuard)
+  // SECURITY FIX: Added RolesGuard — was accessible to any logged-in user
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin', 'platform_admin')
   @Get()
   findAll(@Query('search') search?: string, @Query('hotelId') hotelId?: string) {
     return this.svc.findAll(search, hotelId);

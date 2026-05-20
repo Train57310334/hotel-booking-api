@@ -368,11 +368,29 @@ export class BookingsController {
 
   /**
    * 📄 ดึงใบเสร็จรับเงิน (Invoice)
+   * SECURITY FIX: Added ownership verification
    */
   @UseGuards(JwtAuthGuard)
   @Get(':id/invoice')
   async getInvoice(@Req() req, @Param('id') id: string) {
-      // In a real app, verify the req.user has access to this booking (owner or guest)
+      const userId = req.user?.userId;
+      const userRoles = req.user?.roles || [];
+      const userHotelId = req.user?.hotelId;
+
+      // Platform admins can access any invoice
+      if (userRoles.includes('platform_admin')) {
+        return this.svc.generateInvoice(id);
+      }
+
+      // Verify the user owns this booking or is staff at the booking's hotel
+      const booking = await this.svc.find(id);
+      const isOwner = booking.userId && booking.userId === userId;
+      const isHotelStaff = userHotelId && booking.hotelId === userHotelId;
+
+      if (!isOwner && !isHotelStaff) {
+        throw new ForbiddenException('You do not have permission to access this invoice');
+      }
+
       return this.svc.generateInvoice(id);
   }
 }

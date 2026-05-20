@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards, Patch } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PromotionsService } from './promotions.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../roles/roles.guard';
@@ -32,6 +32,8 @@ export class PromotionsController {
     return this.promotionsService.findAll(hotelId);
   }
 
+  // SECURITY FIX: Added @UseGuards — was missing, allowing unauthenticated DELETE
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.HotelAdmin, Role.PlatformAdmin)
   @Delete(':id')
   remove(@Param('id') id: string) {

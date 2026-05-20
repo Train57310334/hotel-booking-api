@@ -1,11 +1,15 @@
 import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards, Query } from '@nestjs/common';
 import { OwnersService } from './owners.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { ApiTags } from '@nestjs/swagger';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('owners')
+@ApiBearerAuth()
 @Controller('owners')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard) // SECURITY: Added RolesGuard
+@Roles('platform_admin') // SECURITY: Only platform admins can manage owners
 export class OwnersController {
   constructor(private readonly ownersService: OwnersService) {}
 

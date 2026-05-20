@@ -12,8 +12,9 @@ import { NotificationsModule } from '../notifications/notifications.module';
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'change_this_secret_key',
-      signOptions: { expiresIn: '7d' },
+      // SECURITY: No fallback — main.ts validates JWT_SECRET on startup
+      secret: process.env.JWT_SECRET,
+      signOptions: { expiresIn: '24h' }, // Reduced from 7d for security
     }),
     NotificationsModule,
   ],

@@ -12,8 +12,15 @@ export class ChannelManagerWebhookController {
     @Body() payload: any,
     @Headers('x-api-key') apiKey: string,
   ) {
-    // In a real scenario, we'd validate the apiKey against our DB or Env
-    // if (apiKey !== process.env.CHANNEX_WEBHOOK_SECRET) throw new UnauthorizedException();
+    // SECURITY FIX: Validate API key against environment variable
+    // Set CHANNEX_WEBHOOK_SECRET in .env to enable webhook authentication
+    const expectedKey = process.env.CHANNEX_WEBHOOK_SECRET;
+    if (expectedKey && apiKey !== expectedKey) {
+      throw new UnauthorizedException('Invalid webhook API key');
+    }
+    if (!expectedKey) {
+      console.warn('⚠️ CHANNEX_WEBHOOK_SECRET is not set — channel manager webhooks are unprotected!');
+    }
     
     return this.channelsService.processWebhook(payload);
   }

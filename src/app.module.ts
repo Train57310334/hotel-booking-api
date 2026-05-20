@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { PrismaService } from '@/common/prisma/prisma.service';
 import { PrismaModule } from '@/common/prisma/prisma.module';
 import { RedisModule } from '@/common/redis/redis.module';
@@ -47,6 +49,10 @@ import { ActivityLogsModule } from './modules/activity-logs/activity-logs.module
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
+    // ─── SECURITY: Global rate limiting ─────────────────────────────────────
+    // 60 requests per 60 seconds per IP address.
+    // Individual endpoints (login, register) should use stricter per-route limits.
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }]),
     PrismaModule,
     RedisModule,  // ← Global: RedisService injectable everywhere
     AuthModule,
@@ -84,6 +90,10 @@ import { ActivityLogsModule } from './modules/activity-logs/activity-logs.module
     CheckinModule,
     ActivityLogsModule,
   ],
-  providers: [PrismaService],
+  providers: [
+    PrismaService,
+    // ─── SECURITY: Apply throttle globally ──────────────────────────────────
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule {}

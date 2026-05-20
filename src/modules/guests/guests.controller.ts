@@ -55,6 +55,11 @@ export class GuestsController {
 
   @Get('uploads/:filename')
   async serveFile(@Param('filename') filename: string, @Res() res: Response) {
-    return res.sendFile(filename, { root: './uploads' });
+    // SECURITY FIX: Sanitize filename to prevent directory traversal (e.g. ../../.env)
+    const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '');
+    if (!safeName || safeName !== filename) {
+      return res.status(400).json({ message: 'Invalid filename' });
+    }
+    return res.sendFile(safeName, { root: './uploads' });
   }
 }
